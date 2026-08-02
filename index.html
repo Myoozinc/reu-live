@@ -22,7 +22,7 @@
       </div>
       <div class="logo-text">
         <h1>ReuLive <span class="badge-ai"><i class="fa-solid fa-sparkles"></i> AI</span></h1>
-        <p class="subtitle">Copiloto de Reuniones</p>
+        <p class="subtitle">Copiloto en Tiempo Real</p>
       </div>
     </div>
 
@@ -108,7 +108,7 @@
               <i class="fa-solid fa-headset"></i>
             </div>
             <h3>Conecta el Audio o Video de tu Reunión</h3>
-            <p>Captura tu llamada en <strong>Zoom, Meet, Teams</strong>, cámara de video o micrófono para transcribir y obtener respuestas sugeridas en tiempo real.</p>
+            <p>Captura tu llamada en <strong>Zoom, Meet, Teams</strong>, cámara de video o micrófono para transcribir e identificar participantes en tiempo real.</p>
             <button class="btn btn-primary glow-btn" id="btnMainConnect">
               <i class="fa-solid fa-plug-circle-bolt"></i> Iniciar Captura de Audio & Video
             </button>
@@ -181,8 +181,8 @@
           
           <div class="copilot-header">
             <div class="copilot-title">
-              <h3><i class="fa-solid fa-sparkles text-amber"></i> Respuestas Sugeridas en Tiempo Real</h3>
-              <p>Opciones de respuesta generadas automáticamente según lo hablado:</p>
+              <h3><i class="fa-solid fa-sparkles text-amber"></i> Respuestas Sugeridas para Responder</h3>
+              <p>Opciones generadas instantáneamente para que respondas de inmediato:</p>
             </div>
             <button id="btnRefreshCopilot" class="btn-icon-soft" title="Generar nuevas respuestas">
               <i class="fa-solid fa-rotate"></i>
@@ -193,7 +193,7 @@
           <div class="suggestions-list" id="suggestionsContainer">
             
             <div class="suggestion-card card-direct">
-              <div class="card-tag"><i class="fa-solid fa-circle-check"></i> Respuesta Directa</div>
+              <div class="card-tag"><i class="fa-solid fa-circle-check"></i> ⚡ Respuesta Directa e Inmediata</div>
               <p class="suggestion-text">"Entendido. Podemos revisar los datos clave y avanzar con los siguientes pasos de forma inmediata."</p>
               <div class="card-actions">
                 <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
@@ -202,7 +202,7 @@
             </div>
 
             <div class="suggestion-card card-proposal">
-              <div class="card-tag"><i class="fa-solid fa-lightbulb"></i> Propuesta / Alternativa</div>
+              <div class="card-tag"><i class="fa-solid fa-lightbulb"></i> 💡 Propuesta Estratégica</div>
               <p class="suggestion-text">"Una alternativa eficiente es estructurar la solución de forma modular para acelerar el desarrollo."</p>
               <div class="card-actions">
                 <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
@@ -211,7 +211,7 @@
             </div>
 
             <div class="suggestion-card card-question">
-              <div class="card-tag"><i class="fa-solid fa-circle-question"></i> Pregunta Estratégica</div>
+              <div class="card-tag"><i class="fa-solid fa-circle-question"></i> ❓ Pregunta de Clarificación</div>
               <p class="suggestion-text">"¿Cuál es el tiempo estimado de entrega y quién liderará la aprobación final de esta etapa?"</p>
               <div class="card-actions">
                 <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
@@ -220,7 +220,7 @@
             </div>
 
             <div class="suggestion-card card-summary">
-              <div class="card-tag"><i class="fa-solid fa-list-check"></i> Resumen de Cierre</div>
+              <div class="card-tag"><i class="fa-solid fa-list-check"></i> 📌 Síntesis / Cierre</div>
               <p class="suggestion-text">"Para confirmar: acordamos definir el alcance hoy y enviar la actualización por escrito."</p>
               <div class="card-actions">
                 <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
@@ -249,7 +249,21 @@
             <h3><i class="fa-solid fa-stream"></i> Transcripción en Directo</h3>
             <div class="transcript-actions">
               <button id="btnClearTranscript" class="btn-sm"><i class="fa-solid fa-trash"></i> Limpiar</button>
-              <button id="btnAutoScroll" class="btn-sm active"><i class="fa-solid fa-arrow-down-long"></i> Auto-Scroll</button>
+            </div>
+          </div>
+
+          <!-- Speaker Name Config Bar -->
+          <div class="speaker-config-bar">
+            <span class="config-label"><i class="fa-solid fa-id-badge text-cyan"></i> Nombre de Participante:</span>
+            <input type="text" id="speakerNameInput" placeholder="Ej: Cliente / Carlos" class="sm-input" value="Hablante 1 (Interlocutor)">
+          </div>
+
+          <!-- Quick Speech Injection Test Toolbar -->
+          <div class="quick-speech-test">
+            <span class="test-label"><i class="fa-solid fa-bolt text-amber"></i> Simular frase de la reunión:</span>
+            <div class="test-chips">
+              <button class="chip-btn" data-speech="¿Cuál es el presupuesto final y la fecha de entrega?">"¿Cuál es el presupuesto?"</button>
+              <button class="chip-btn" data-speech="¿Cómo conectaremos el repositorio de GitHub con Vercel?">"¿Cómo conectamos Vercel?"</button>
             </div>
           </div>
 
@@ -292,7 +306,7 @@
             <div class="analytics-card">
               <h4><i class="fa-solid fa-list-check text-amber"></i> Tareas & Action Items</h4>
               <ul class="bullet-list" id="actionItemsList">
-                <li><i class="fa-regular fa-square text-amber"></i> Aplicación optimizada para Smartphone y Desktop.</li>
+                <li><i class="fa-regular fa-square text-amber"></i> Clasificación de hablantes e identificación de respuestas activa.</li>
               </ul>
             </div>
 
@@ -317,7 +331,6 @@
 
         <div class="connection-options">
           
-          <!-- Option A: Camera Video + Audio (Perfect for Smartphone Video Recording) -->
           <div class="option-card" id="optCameraVideo">
             <div class="option-icon bg-pink">
               <i class="fa-solid fa-video"></i>
@@ -329,7 +342,6 @@
             </div>
           </div>
 
-          <!-- Option B: Screen / Zoom Window + System Audio -->
           <div class="option-card" id="optScreenAudio">
             <div class="option-icon bg-purple">
               <i class="fa-solid fa-desktop"></i>
@@ -341,7 +353,6 @@
             </div>
           </div>
 
-          <!-- Option C: Mic Only -->
           <div class="option-card" id="optMicOnly">
             <div class="option-icon bg-cyan">
               <i class="fa-solid fa-microphone-lines"></i>

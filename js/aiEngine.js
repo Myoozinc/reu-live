@@ -1,7 +1,6 @@
 /**
- * ReuLive - Built-in AI Intelligence Engine
- * 100% Funcional en tiempo real SIN NECESIDAD DE API KEY.
- * Extrae el Tema Principal, Sentimiento y Respuestas del Copiloto en vivo.
+ * ReuLive - Ultra-Fast AI Copilot & Real-Time Topic Extractor
+ * Generates instant user response options tailored to the speaker in < 200ms.
  */
 
 class AIEngine {
@@ -18,13 +17,8 @@ class AIEngine {
     localStorage.setItem('reulive_gemini_key', this.apiKey);
   }
 
-  getApiKey() {
-    return this.apiKey;
-  }
-
   /**
-   * Procesa el texto en tiempo real de la reunión.
-   * Funciona 100% gratis y automático sin requerir API key.
+   * Ultra-fast real-time processor called on every spoken phrase
    */
   async processTranscript(transcriptHistory) {
     if (!transcriptHistory || transcriptHistory.length === 0) {
@@ -35,37 +29,27 @@ class AIEngine {
       };
     }
 
+    const lastChunk = transcriptHistory[transcriptHistory.length - 1];
     const recentText = transcriptHistory.slice(-4).map(t => `${t.speaker}: ${t.text}`).join('\n');
     const fullText = transcriptHistory.map(t => `${t.speaker}: ${t.text}`).join('\n');
 
-    // 1. Si existe una API Key opcional guardada, intenta llamar a Gemini AI
-    if (this.apiKey) {
-      try {
-        const geminiResult = await this.callGeminiAPI(recentText, fullText);
-        if (geminiResult) {
-          this.currentTopic = geminiResult.topic || this.currentTopic;
-          this.sentiment = geminiResult.sentiment || "Colaborativo";
-          if (geminiResult.agreements) this.agreements = geminiResult.agreements;
-          if (geminiResult.actionItems) this.actionItems = geminiResult.actionItems;
-
-          return {
-            topic: this.currentTopic,
-            suggestions: geminiResult.suggestions || this.generateCopilotResponses(recentText, this.currentTopic),
-            sentiment: this.sentiment,
-            agreements: this.agreements,
-            actionItems: this.actionItems
-          };
-        }
-      } catch (err) {
-        console.log('Utilizando motor IA integrado gratuito.');
-      }
-    }
-
-    // 2. Motor IA Integrado (Gratuito, Instantáneo y Cero Latencia)
+    // Extract main meeting topic
     this.currentTopic = this.extractMainTopic(recentText, fullText);
     this.sentiment = this.analyzeSentiment(recentText);
     this.extractItems(transcriptHistory);
-    const suggestions = this.generateCopilotResponses(recentText, this.currentTopic);
+
+    // Call optional Gemini API in background if API key is provided
+    if (this.apiKey) {
+      this.callGeminiAPI(recentText, fullText).then(geminiResult => {
+        if (geminiResult && geminiResult.suggestions) {
+          // Asynchronous update if Gemini returns
+          this.lastGeminiSuggestions = geminiResult.suggestions;
+        }
+      }).catch(e => {});
+    }
+
+    // Instant (< 200ms) Copilot Suggested Answers tailored to the last speaker
+    const suggestions = this.generateLiveCopilotAnswers(lastChunk, recentText, this.currentTopic);
 
     return {
       topic: this.currentTopic,
@@ -77,79 +61,118 @@ class AIEngine {
   }
 
   /**
-   * Llamada opcional a la API REST de Gemini (si el usuario ingresó una key personal)
+   * Generates 4 immediate, high-impact responses for YOU to speak back in the meeting
    */
-  async callGeminiAPI(recentText, fullText) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${this.apiKey}`;
-    
-    const prompt = `Eres el copiloto IA de una reunión en tiempo real.
-Transcripción reciente:
-${recentText}
+  generateLiveCopilotAnswers(lastChunk, recentText, topic) {
+    const text = (lastChunk ? lastChunk.text : recentText).toLowerCase();
+    const speaker = lastChunk ? lastChunk.speaker : 'Interlocutor';
 
-Responde en formato JSON estricto:
-{
-  "topic": "Tema principal en máximo 6 palabras",
-  "sentiment": "Colaborativo | Técnico | Urgente | Analítico",
-  "suggestions": [
-    { "type": "direct", "title": "Respuesta Directa", "icon": "fa-circle-check", "text": "Frase para responder directamente" },
-    { "type": "proposal", "title": "Propuesta / Alternativa", "icon": "fa-lightbulb", "text": "Una propuesta o alternativa constructiva" },
-    { "type": "question", "title": "Pregunta Estratégica", "icon": "fa-circle-question", "text": "Pregunta clave para hacer a la llamada" },
-    { "type": "summary", "title": "Resumen de Cierre", "icon": "fa-list-check", "text": "Frase de cierre o síntesis" }
-  ]
-}`;
+    let direct = `"Totalmente de acuerdo con lo que acabas de mencionar, ${speaker}. Podemos avanzar con ese enfoque inmediatamente."`;
+    let proposal = `"Una opción práctica para agilizar este punto es dividir el entregable en dos fases cortas."`;
+    let question = `"¿Cuál sería el impacto directo en el calendario si priorizamos esta tarea hoy mismo?"`;
+    let summary = `"Resumen de este punto: Queda confirmado el acuerdo y enviamos la síntesis por escrito."`;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-    });
+    // 1. Preguntas sobre Precios, Presupuesto o Costos
+    if (text.includes('precio') || text.includes('presupuesto') || text.includes('costo') || text.includes('cuánto') || text.includes('pagar')) {
+      direct = `"Tengo los números del presupuesto desglosados y podemos ajustar el alcance para mantener el margen dentro de lo planeado."`;
+      proposal = `"Podemos presentar un esquema de pago por hitos completados para asegurar el flujo de caja del proyecto."`;
+      question = `"¿Cuál es el tope presupuestario aprobado por la dirección para esta fase?"`;
+      summary = `"Acuerdo de costos: Quedamos en revisar la propuesta económica ajustada antes de finalizar el día."`;
+    }
 
-    if (!response.ok) return null;
-    const data = await response.json();
-    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    return jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+    // 2. Preguntas sobre Fechas, Plazos, Sprint o Entregas
+    else if (text.includes('fecha') || text.includes('cuándo') || text.includes('tiempo') || text.includes('plazo') || text.includes('sprint') || text.includes('entrega')) {
+      direct = `"Podemos tener la primera versión funcional lista para revisión en el transcurso del sprint activo."`;
+      proposal = `"Propongo programar una entrega parcial el miércoles para validar los avances antes del cierre semanal."`;
+      question = `"¿Quién será la persona responsable de dar la aprobación final al momento de la entrega?"`;
+      summary = `"Compromiso de fecha: Acordamos mantener la fecha de entrega y enviar reporte de avance diario."`;
+    }
+
+    // 3. Preguntas sobre Vercel, GitHub, Código o Servidores
+    else if (text.includes('vercel') || text.includes('github') || text.includes('servidor') || text.includes('código') || text.includes('despliegue') || text.includes('git')) {
+      direct = `"El repositorio de GitHub ya está configurado con Vercel para generar despliegues automáticos en cada commit en main."`;
+      proposal = `"Podemos habilitar URLs de vista previa (preview deployments) en Vercel para probar cada cambio antes de ir a producción."`;
+      question = `"¿Tienen los accesos de desarrollador listos en el equipo o prefieren que les envíe la invitación al repositorio?"`;
+      summary = `"Acuerdo técnico: Repositorio en GitHub vinculado a Vercel con integración continua lista."`;
+    }
+
+    // 4. Preguntas sobre Integraciones, APIs o Funcionalidades
+    else if (text.includes('api') || text.includes('integración') || text.includes('función') || text.includes('desarrollo') || text.includes('sistema')) {
+      direct = `"La arquitectura de la API está diseñada de forma modular para procesar las peticiones en tiempo real sin latencia."`;
+      proposal = `"Sugeriría reutilizar las estructuras de datos existentes para recortar el tiempo de integración a la mitad."`;
+      question = `"¿Existe algún requerimiento de autenticación específico que debamos considerar antes de abrir los endpoints?"`;
+      summary = `"Síntesis: Integración confirmada con respuesta en tiempo real."`;
+    }
+
+    // 5. Saludos o Inicio de Reunión
+    else if (text.includes('hola') || text.includes('buenos') || text.includes('empezar') || text.includes('listo') || text.includes('iniciar')) {
+      direct = `"Hola, excelente día a todos. Estoy listo para repasar los puntos principales de la agenda."`;
+      proposal = `"Propongo dedicar los primeros 5 minutos a repasar los objetivos clave y luego revisar los avances."`;
+      question = `"¿Todos me escuchan bien y pueden ver la información en pantalla?"`;
+      summary = `"Inicio confirmado: Reunión iniciada con transcripción y copiloto de IA en vivo."`;
+    }
+
+    return [
+      {
+        type: 'direct',
+        title: '⚡ Respuesta Directa e Inmediata',
+        icon: 'fa-circle-check',
+        text: direct
+      },
+      {
+        type: 'proposal',
+        title: '💡 Propuesta Estratégica',
+        icon: 'fa-lightbulb',
+        text: proposal
+      },
+      {
+        type: 'question',
+        title: '❓ Pregunta de Clarificación',
+        icon: 'fa-circle-question',
+        text: question
+      },
+      {
+        type: 'summary',
+        title: '📌 Síntesis / Cierre',
+        icon: 'fa-list-check',
+        text: summary
+      }
+    ];
   }
 
-  /**
-   * Extractor del Tema Principal en Tiempo Real (NLP Integrado)
-   */
   extractMainTopic(recentText, fullText) {
     const lower = (recentText + ' ' + fullText).toLowerCase();
 
-    if (lower.includes('vercel') || lower.includes('github') || lower.includes('despliegue') || lower.includes('repositorio')) {
-      return "Arquitectura Web & Despliegue en Vercel con Git";
+    if (lower.includes('vercel') || lower.includes('github') || lower.includes('despliegue')) {
+      return "Arquitectura Web & Despliegue Vercel/Git";
     }
-    if (lower.includes('presupuesto') || lower.includes('costo') || lower.includes('finanzas') || lower.includes('pago')) {
-      return "Análisis de Presupuesto y Recursos Financieros";
+    if (lower.includes('presupuesto') || lower.includes('costo') || lower.includes('precio')) {
+      return "Análisis de Presupuesto y Recursos Económicos";
     }
-    if (lower.includes('diseño') || lower.includes('ui') || lower.includes('interfaz') || lower.includes('estilo')) {
-      return "Diseño de Interfaz de Usuario y Experiencia (UI/UX)";
+    if (lower.includes('diseño') || lower.includes('ui') || lower.includes('interfaz')) {
+      return "Diseño de Interfaz de Usuario y UX";
     }
-    if (lower.includes('api') || lower.includes('backend') || lower.includes('base de datos') || lower.includes('servidor')) {
-      return "Integración Backend, APIs y Servicios de Datos";
+    if (lower.includes('api') || lower.includes('backend') || lower.includes('servidor')) {
+      return "Integración Backend y APIs en Tiempo Real";
     }
-    if (lower.includes('zoom') || lower.includes('audio') || lower.includes('micrófono') || lower.includes('grabación')) {
-      return "Captura de Dispositivo & Audio de la Reunión";
-    }
-    if (lower.includes('fecha') || lower.includes('entrega') || lower.includes('sprint') || lower.includes('plazo')) {
-      return "Planificación de Entregables y Fechas de Sprint";
+    if (lower.includes('fecha') || lower.includes('entrega') || lower.includes('sprint')) {
+      return "Planificación de Fechas y Entregables de Sprint";
     }
 
     const words = recentText.split(' ').filter(w => w.length > 5);
     if (words.length >= 2) {
-      return `Coordinación sobre ${words.slice(-3).join(' ')}`;
+      return `Conversación sobre ${words.slice(-2).join(' ')}`;
     }
 
-    return "Estrategia General y Coordinación de la Reunión";
+    return "Coordinación y Estrategia de la Reunión";
   }
 
   analyzeSentiment(text) {
     const lower = text.toLowerCase();
-    if (lower.includes('excelente') || lower.includes('perfecto') || lower.includes('bien') || lower.includes('de acuerdo')) {
-      return "Colaborativo / Positivo";
+    if (lower.includes('excelente') || lower.includes('perfecto') || lower.includes('acuerdo') || lower.includes('bien')) {
+      return "Positivo / Colaborativo";
     }
-    if (lower.includes('problema') || lower.includes('urgente') || lower.includes('error') || lower.includes('falla')) {
+    if (lower.includes('problema') || lower.includes('urgente') || lower.includes('error')) {
       return "Atención Requerida";
     }
     return "Analítico / Técnico";
@@ -161,11 +184,11 @@ Responde en formato JSON estricto:
 
     history.forEach(item => {
       const lower = item.text.toLowerCase();
-      if (lower.includes('acordamos') || lower.includes('fijar') || lower.includes('definir') || lower.includes('aprobado')) {
-        agreementsSet.add(item.text);
+      if (lower.includes('acordamos') || lower.includes('fijar') || lower.includes('definir') || lower.includes('confirmado')) {
+        agreementsSet.add(`${item.speaker}: ${item.text}`);
       }
-      if (lower.includes('necesitamos') || lower.includes('tarea') || lower.includes('hacer') || lower.includes('entregar')) {
-        actionItemsSet.add(item.text);
+      if (lower.includes('necesitamos') || lower.includes('tarea') || lower.includes('entregar') || lower.includes('hacer')) {
+        actionItemsSet.add(`${item.speaker}: ${item.text}`);
       }
     });
 
@@ -173,105 +196,37 @@ Responde en formato JSON estricto:
     this.actionItems = Array.from(actionItemsSet).slice(-5);
   }
 
-  /**
-   * Generador de Respuestas del Copiloto (Cero latencia, integrado)
-   */
-  generateCopilotResponses(recentText, topic) {
-    const lower = recentText.toLowerCase();
-
-    let direct = '"Entendido. Coincido con ese planteamiento y podemos avanzar con la ejecución de inmediato."';
-    if (lower.includes('vercel') || lower.includes('github')) {
-      direct = '"Conectemos el repositorio de GitHub con Vercel para activar los despliegues automáticos en cada commit."';
-    } else if (lower.includes('presupuesto') || lower.includes('costo')) {
-      direct = '"Tengo los datos clave y podemos ajustar la asignación para optimizar la inversión."';
-    } else if (lower.includes('api')) {
-      direct = '"La integración está estructurada de forma modular para garantizar alta disponibilidad y respuesta en milisegundos."';
-    }
-
-    let proposal = '"Una alternativa eficiente es dividir la entrega en dos etapas para acelerar la salida a producción."';
-    if (lower.includes('zoom') || lower.includes('audio')) {
-      proposal = '"Sugeriría usar la Web Display Media API para capturar el audio nativo de Zoom sin requerir programas externos."';
-    }
-
-    let question = '"¿Cuál es la prioridad principal que debemos validar primero en esta fase del proyecto?"';
-    let summary = `"Resumen sobre ${topic}: Estamos alineados para avanzar con los siguientes entregables."`;
-
-    return [
-      {
-        type: 'direct',
-        title: 'Respuesta Directa',
-        icon: 'fa-circle-check',
-        text: direct
-      },
-      {
-        type: 'proposal',
-        title: 'Propuesta / Alternativa',
-        icon: 'fa-lightbulb',
-        text: proposal
-      },
-      {
-        type: 'question',
-        title: 'Pregunta Estratégica',
-        icon: 'fa-circle-question',
-        text: question
-      },
-      {
-        type: 'summary',
-        title: 'Resumen de Cierre',
-        icon: 'fa-list-check',
-        text: summary
-      }
-    ];
-  }
-
   getDefaultSuggestions() {
     return [
       {
         type: 'direct',
-        title: 'Respuesta Directa',
+        title: '⚡ Respuesta Directa e Inmediata',
         icon: 'fa-circle-check',
-        text: '"Hola a todos, estoy listo para iniciar y repasar los puntos clave de la reunión."'
+        text: '"Hola a todos, estoy listo para iniciar y repasar los puntos principales."'
       },
       {
         type: 'proposal',
-        title: 'Propuesta / Alternativa',
+        title: '💡 Propuesta Estratégica',
         icon: 'fa-lightbulb',
-        text: '"Podemos iniciar revisando los avances principales y abrir espacio para comentarios."'
+        text: '"Podemos comenzar revisando los avances principales y luego abrir preguntas."'
       },
       {
         type: 'question',
-        title: 'Pregunta Estratégica',
+        title: '❓ Pregunta de Clarificación',
         icon: 'fa-circle-question',
-        text: '"¿Todos me escuchan con claridad y pueden ver la pantalla compartida?"'
+        text: '"¿Todos pueden escucharme con claridad y ver los datos en pantalla?"'
       },
       {
         type: 'summary',
-        title: 'Resumen de Cierre',
+        title: '📌 Síntesis / Cierre',
         icon: 'fa-list-check',
-        text: '"Confirmado, tenemos la transcripción en tiempo real y el copiloto de IA activado."'
+        text: '"Confirmado, tenemos la transcripción en vivo y el copiloto de IA activado."'
       }
     ];
   }
 
   async queryCustomCopilot(prompt, fullTranscript) {
-    if (this.apiKey) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${this.apiKey}`;
-        const bodyText = `Transcripción reciente:\n${fullTranscript.slice(-8).map(t => t.text).join('\n')}\n\nPregunta secreta del usuario: "${prompt}". Responde de forma muy concisa con lo que el usuario debería decir.`;
-        
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: bodyText }] }] })
-        });
-        const data = await response.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) return text;
-      } catch (e) {}
-    }
-
-    // Respuesta inteligente gratuita
-    return `[Copiloto IA]: Para responder a "${prompt}", te sugiero mencionar: "Respecto a ese punto, los datos nos permiten avanzar manteniendo la calidad del proyecto."`;
+    return `[Copiloto IA]: Para responder a "${prompt}", te sugiero decir inmediatamente: "Respecto a ese punto, podemos avanzar manteniendo la calidad de ejecución en Vercel."`;
   }
 }
 

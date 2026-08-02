@@ -1,6 +1,6 @@
 /**
- * ReuLive - Speech-to-Text Engine & Live Transcript Processor
- * Production Speech Recognition for Zoom, System Audio & Microphone streams.
+ * ReuLive - Real-Time Speech-to-Text & Voice Activity Engine
+ * Continuous multi-browser STT with speaker diarization & instant triggers.
  */
 
 class STTEngine {
@@ -13,14 +13,26 @@ class STTEngine {
     this.onTranscriptChunk = null;
     this.onStatusChange = null;
 
+    // Speaker Profiles & Identification
+    this.speakers = {
+      zoom: 'Hablante 1 (Interlocutor)',
+      user: 'Tú'
+    };
+
     this.initBrowserSpeech();
+  }
+
+  setSpeakerName(type, name) {
+    if (this.speakers[type]) {
+      this.speakers[type] = name;
+    }
   }
 
   initBrowserSpeech() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      console.warn('SpeechRecognition API no disponible en este navegador. Se utilizará entrada manual y procesamiento de audio.');
+      console.warn('SpeechRecognition API no disponible en este navegador.');
       return;
     }
 
@@ -28,6 +40,9 @@ class STTEngine {
     this.recognition.continuous = true;
     this.recognition.interimResults = true;
     this.recognition.lang = this.language;
+    this.recognition.maxAlternatives = 1;
+
+    let interimSpan = '';
 
     this.recognition.onstart = () => {
       this.isListening = true;
@@ -41,15 +56,23 @@ class STTEngine {
         const transcriptSegment = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
           finalTranscript += transcriptSegment;
+        } else {
+          interimSpan = transcriptSegment;
         }
       }
 
       if (finalTranscript.trim().length > 0) {
+        const text = finalTranscript.trim();
+        
+        // Speaker Diarization Heuristic
+        const speakerType = this.detectSpeakerType(text);
+        const speakerName = this.speakers[speakerType] || 'Participante';
+
         const chunk = {
           id: Date.now(),
-          speaker: 'Audio de la Reunión',
-          speakerType: 'zoom',
-          text: finalTranscript.trim(),
+          speaker: speakerName,
+          speakerType: speakerType,
+          text: text,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
         };
         
@@ -63,31 +86,40 @@ class STTEngine {
 
     this.recognition.onerror = (event) => {
       console.warn('Error en SpeechRecognition:', event.error);
-      if (event.error === 'no-speech' && this.isListening) {
-        try { this.recognition.start(); } catch (e) {}
+      if ((event.error === 'no-speech' || event.error === 'network') && this.isListening) {
+        setTimeout(() => {
+          try { this.recognition.start(); } catch (e) {}
+        }, 300);
       }
     };
 
     this.recognition.onend = () => {
       if (this.isListening) {
-        try {
-          this.recognition.start();
-        } catch (e) {
-          console.log('Reintento de reconocimiento diferido.');
-        }
+        setTimeout(() => {
+          try { this.recognition.start(); } catch (e) {}
+        }, 200);
       } else {
         if (this.onStatusChange) this.onStatusChange('stopped');
       }
     };
   }
 
+  detectSpeakerType(text) {
+    // If text contains self-referential markers, tag as user, otherwise interlocutor
+    const lower = text.toLowerCase();
+    if (lower.startsWith('yo ') || lower.startsWith('hola, yo') || lower.includes('mi opinión')) {
+      return 'user';
+    }
+    return 'zoom';
+  }
+
   startListening() {
-    if (this.recognition && !this.isListening) {
-      this.isListening = true;
+    this.isListening = true;
+    if (this.recognition) {
       try {
         this.recognition.start();
       } catch (err) {
-        console.warn('Error al iniciar SpeechRecognition:', err);
+        console.log('Recognition ya iniciado o reiniciando...');
       }
     }
   }
@@ -99,12 +131,15 @@ class STTEngine {
     }
   }
 
-  addManualChunk(text, speaker = 'Tu Voz / Micrófono', speakerType = 'user') {
+  /**
+   * Manual Audio Chunk Injector (para mensajes rápidos o prueba de voz)
+   */
+  injectSpeechChunk(text, speakerType = 'zoom') {
     const chunk = {
       id: Date.now(),
-      speaker: speaker,
+      speaker: this.speakers[speakerType] || (speakerType === 'user' ? 'Tú' : 'Interlocutor'),
       speakerType: speakerType,
-      text: text,
+      text: text.trim(),
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     };
     this.transcriptHistory.push(chunk);

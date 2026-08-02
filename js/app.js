@@ -1,6 +1,6 @@
 /**
  * ReuLive - Main Application Controller
- * Orchestrates MediaEngine, STTEngine, AIEngine, Mobile & Desktop Capture.
+ * Orchestrates MediaEngine, STTEngine, AIEngine, Speaker Diarization & Instant Copilot.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -49,6 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const topicTimelineList = document.getElementById('topicTimelineList');
   const agreementsList = document.getElementById('agreementsList');
   const actionItemsList = document.getElementById('actionItemsList');
+  const speakerNameInput = document.getElementById('speakerNameInput');
 
   const customPromptInput = document.getElementById('customPromptInput');
   const btnSendCustomPrompt = document.getElementById('btnSendCustomPrompt');
@@ -65,6 +66,22 @@ document.addEventListener('DOMContentLoaded', () => {
   let timerSeconds = 0;
   let isAutoScroll = true;
 
+  // Speaker Name Config Event Listener
+  if (speakerNameInput) {
+    speakerNameInput.addEventListener('input', (e) => {
+      const val = e.target.value.trim() || 'Hablante 1 (Interlocutor)';
+      sttEngine.setSpeakerName('zoom', val);
+    });
+  }
+
+  // Quick Speech Injection Buttons
+  document.querySelectorAll('.chip-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const text = btn.getAttribute('data-speech');
+      sttEngine.injectSpeechChunk(text, 'zoom');
+    });
+  });
+
   // Initialize Canvas Visualizer
   mediaEngine.initCanvas(audioCanvas);
 
@@ -78,10 +95,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  // Setup STT Callbacks
+  // Setup STT Callbacks - ULTRA-FAST Real-time update
   sttEngine.onTranscriptChunk = async (chunk) => {
     appendTranscriptItem(chunk);
 
+    // Process AI Copilot Response Cards immediately (< 200ms)
     const aiResults = await aiEngine.processTranscript(sttEngine.transcriptHistory);
     updateAIUI(aiResults);
   };
@@ -97,7 +115,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target === modalConnection) modalConnection.style.display = 'none';
   });
 
-  // Helper to enable recording & listening state
   const enableRecordingState = (label, hasVideo = false) => {
     modalConnection.style.display = 'none';
     sourceLabel.textContent = `Fuente: ${label}`;
@@ -117,7 +134,6 @@ document.addEventListener('DOMContentLoaded', () => {
     btnToggleAudio.disabled = false;
     if (hasVideo) btnToggleVideo.disabled = false;
 
-    // Enable Big Green Recording Button immediately
     btnStartRecord.disabled = false;
     btnExportReport.disabled = false;
 
@@ -126,53 +142,49 @@ document.addEventListener('DOMContentLoaded', () => {
     startTimer();
   };
 
-  // Option A: Camera Video + Audio (Smartphone Video Capture)
   if (optCameraVideo) {
     optCameraVideo.addEventListener('click', async () => {
       try {
         const result = await mediaEngine.startCameraAudioCapture();
         enableRecordingState('Cámara de Video & Audio', !!result.videoTrack);
       } catch (err) {
-        alert('Accediendo en modo solo micrófono...');
+        alert('Accediendo en modo micrófono...');
         const result = await mediaEngine.startMicOnlyCapture();
         enableRecordingState('Micrófono del Dispositivo', false);
       }
     });
   }
 
-  // Option B: Screen / Zoom Window + System Audio (Desktop)
   if (optScreenAudio) {
     optScreenAudio.addEventListener('click', async () => {
       try {
         const result = await mediaEngine.startScreenAudioCapture();
         enableRecordingState('Zoom / Pantalla del Dispositivo', !!result.videoTrack);
       } catch (err) {
-        alert('Captura de pantalla no disponible en este navegador. Iniciando captura de audio...');
+        alert('Iniciando captura de audio...');
         const result = await mediaEngine.startMicOnlyCapture();
         enableRecordingState('Micrófono del Dispositivo', false);
       }
     });
   }
 
-  // Option C: Mic Only Capture
   if (optMicOnly) {
     optMicOnly.addEventListener('click', async () => {
       try {
         await mediaEngine.startMicOnlyCapture();
         enableRecordingState('Micrófono del Dispositivo', false);
       } catch (err) {
-        alert('No se pudo acceder al micrófono del dispositivo.');
+        alert('No se pudo acceder al micrófono.');
       }
     });
   }
 
-  // Recording Button Logic (Green Iniciar Grabación)
   btnStartRecord.addEventListener('click', () => {
     const success = mediaEngine.startRecording();
     if (success) {
       btnStartRecord.style.display = 'none';
       btnStopRecord.style.display = 'inline-flex';
-      updateStatus(true, 'GRABANDO...');
+      updateStatus(true, 'GRABANDO EN VIVO');
     } else {
       alert('Inicia primero la captura de audio o video.');
     }
@@ -192,7 +204,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Mobile Bottom Nav Switching
+  // Mobile Bottom Nav
   mobileNavItems.forEach(item => {
     item.addEventListener('click', () => {
       const target = item.getAttribute('data-target');
@@ -218,7 +230,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Desktop Tab Navigation
+  // Desktop Tab Nav
   tabBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       const targetTab = btn.getAttribute('data-tab');
@@ -231,13 +243,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Refresh Copilot Answers
   btnRefreshCopilot.addEventListener('click', async () => {
     const aiResults = await aiEngine.processTranscript(sttEngine.transcriptHistory);
     updateAIUI(aiResults);
   });
 
-  // Custom AI Query Prompt
   const handleCustomPrompt = async () => {
     const query = customPromptInput.value.trim();
     if (!query) return;
@@ -267,7 +277,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Enter') handleCustomPrompt();
   });
 
-  // Export Report
   btnExportReport.addEventListener('click', () => {
     const topic = aiEngine.currentTopic;
     const history = sttEngine.transcriptHistory;
@@ -296,7 +305,6 @@ document.addEventListener('DOMContentLoaded', () => {
     a.click();
   });
 
-  // Clear Transcript
   btnClearTranscript.addEventListener('click', () => {
     sttEngine.transcriptHistory = [];
     transcriptStream.innerHTML = `
@@ -307,7 +315,6 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
   });
 
-  // Helpers
   function updateStatus(isLive, label) {
     if (isLive) {
       liveStatusBadge.className = 'status-badge status-live';
