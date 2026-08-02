@@ -48,7 +48,7 @@
       </div>
 
       <button id="btnConnectZoom" class="btn btn-primary glow-btn">
-        <i class="fa-solid fa-plug-circle-bolt"></i> Conectar Audio
+        <i class="fa-solid fa-plug-circle-bolt"></i> Conectar Fuente
       </button>
 
       <button id="btnExportReport" class="btn btn-outline" disabled title="Exportar Informe">
@@ -107,10 +107,10 @@
             <div class="placeholder-icon">
               <i class="fa-solid fa-headset"></i>
             </div>
-            <h3>Conecta el Audio de tu Reunión</h3>
-            <p>Captura el audio de tu llamada en <strong>Zoom, Meet, Teams</strong> o tu micrófono móvil para transcribir y obtener respuestas sugeridas en tiempo real.</p>
+            <h3>Conecta el Audio o Video de tu Reunión</h3>
+            <p>Captura tu llamada en <strong>Zoom, Meet, Teams</strong>, cámara de video o micrófono para transcribir y obtener respuestas sugeridas en tiempo real.</p>
             <button class="btn btn-primary glow-btn" id="btnMainConnect">
-              <i class="fa-solid fa-plug-circle-bolt"></i> Iniciar Captura de Audio
+              <i class="fa-solid fa-plug-circle-bolt"></i> Iniciar Captura de Audio & Video
             </button>
           </div>
 
@@ -135,17 +135,17 @@
         <!-- Quick Controls Footer -->
         <div class="viewport-footer">
           <div class="control-group">
-            <button id="btnStartRecord" class="btn btn-success" disabled>
+            <button id="btnStartRecord" class="btn btn-success glow-btn" disabled>
               <i class="fa-solid fa-circle-dot"></i> Iniciar Grabación
             </button>
             <button id="btnStopRecord" class="btn btn-danger" style="display: none;">
-              <i class="fa-solid fa-square"></i> Detener & Guardar
+              <i class="fa-solid fa-square"></i> Detener & Guardar Grabación
             </button>
           </div>
 
           <div class="audio-mixer-info">
             <div class="channel">
-              <i class="fa-solid fa-desktop text-purple"></i> Zoom:
+              <i class="fa-solid fa-desktop text-purple"></i> Zoom/Sistema:
               <div class="meter-bar"><div class="meter-fill" id="systemAudioMeter"></div></div>
             </div>
             <div class="channel">
@@ -308,15 +308,28 @@
   <div class="modal-backdrop" id="modalConnection" style="display: none;">
     <div class="modal-card glass-panel">
       <div class="modal-header">
-        <h2><i class="fa-solid fa-plug-circle-bolt text-accent"></i> Conectar Audio & Pantalla</h2>
+        <h2><i class="fa-solid fa-plug-circle-bolt text-accent"></i> Conectar Fuente de la Reunión</h2>
         <button class="btn-close" id="btnCloseModalConnect"><i class="fa-solid fa-xmark"></i></button>
       </div>
 
       <div class="modal-body">
-        <p class="modal-desc">Selecciona la fuente de entrada de tu reunión:</p>
+        <p class="modal-desc">Selecciona cómo deseas grabar la reunión:</p>
 
         <div class="connection-options">
           
+          <!-- Option A: Camera Video + Audio (Perfect for Smartphone Video Recording) -->
+          <div class="option-card" id="optCameraVideo">
+            <div class="option-icon bg-pink">
+              <i class="fa-solid fa-video"></i>
+            </div>
+            <div class="option-content">
+              <h3>Cámara de Video + Audio del Dispositivo</h3>
+              <p>Graba el video de la cámara frontal/trasera y el audio ambiente de la llamada en tiempo real.</p>
+              <span class="tag-recommend">Recomendado para Smartphone / Grabación de Video</span>
+            </div>
+          </div>
+
+          <!-- Option B: Screen / Zoom Window + System Audio -->
           <div class="option-card" id="optScreenAudio">
             <div class="option-icon bg-purple">
               <i class="fa-solid fa-desktop"></i>
@@ -324,10 +337,11 @@
             <div class="option-content">
               <h3>Zoom / Pantalla del Dispositivo con Audio</h3>
               <p>Captura el audio directamente de la ventana de Zoom o pantalla completa y combínalo con tu micrófono.</p>
-              <span class="tag-recommend">Recomendado para Escritorio & Web</span>
+              <span class="tag-recommend">Recomendado para Escritorio & Web Zoom</span>
             </div>
           </div>
 
+          <!-- Option C: Mic Only -->
           <div class="option-card" id="optMicOnly">
             <div class="option-icon bg-cyan">
               <i class="fa-solid fa-microphone-lines"></i>
@@ -335,7 +349,6 @@
             <div class="option-content">
               <h3>Solo Micrófono del Dispositivo</h3>
               <p>Ideal para teléfonos móviles (Smartphone), llamadas en altavoz o voz directa.</p>
-              <span class="tag-recommend">Recomendado para Smartphone / Móvil</span>
             </div>
           </div>
 

@@ -1,13 +1,14 @@
 /**
  * ReuLive - Media Engine
- * Handles Audio & Video Stream capture (Zoom, Screen, System Audio & User Mic),
- * Web Audio API mixing, MediaRecorder, and WebGL/Canvas visualizer.
+ * Robust Audio & Video Capture (Screen, Camera, Zoom, Mic)
+ * Mixes Audio Context, drives Spectrum Visualizer, and manages MediaRecorder.
  */
 
 class MediaEngine {
   constructor() {
     this.displayStream = null;
     this.micStream = null;
+    this.cameraStream = null;
     this.combinedStream = null;
     this.audioContext = null;
     this.analyser = null;
@@ -22,11 +23,11 @@ class MediaEngine {
     this.canvasCtx = null;
     this.animFrameId = null;
 
-    // Callbacks
     this.onVolumeChange = null;
   }
 
   initCanvas(canvasElement) {
+    if (!canvasElement) return;
     this.canvas = canvasElement;
     this.canvasCtx = canvasElement.getContext('2d');
     this.resizeCanvas();
@@ -35,101 +36,109 @@ class MediaEngine {
 
   resizeCanvas() {
     if (!this.canvas) return;
-    this.canvas.width = this.canvas.parentElement.clientWidth || 800;
+    this.canvas.width = this.canvas.parentElement ? this.canvas.parentElement.clientWidth : 600;
     this.canvas.height = 100;
   }
 
   /**
-   * Start capturing Display/Zoom Screen with System Audio + Mic Audio
+   * Option 1: Screen / Zoom Window + System Audio + Mic
    */
   async startScreenAudioCapture() {
     try {
-      // 1. Get Screen / Window / Zoom Display Media with system audio
       this.displayStream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          displaySurface: 'window',
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-          frameRate: { ideal: 30 }
-        },
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
+        video: { displaySurface: 'window' },
+        audio: { echoCancellation: true, noiseSuppression: true }
       });
-
-      // 2. Get User Microphone Audio
-      try {
-        this.micStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true
-          }
-        });
-      } catch (micErr) {
-        console.warn('Microphone permission denied or not found:', micErr);
-        this.micStream = null;
-      }
-
-      // 3. Mix audio streams via Web Audio API
-      this.setupAudioMixing();
-
-      return {
-        videoTrack: this.displayStream.getVideoTracks()[0] || null,
-        hasSystemAudio: this.displayStream.getAudioTracks().length > 0,
-        hasMicAudio: !!this.micStream
-      };
-
-    } catch (error) {
-      console.error('Error initiating screen/audio capture:', error);
-      throw error;
+    } catch (err) {
+      console.warn('Screen share display media not available or denied:', err);
+      this.displayStream = null;
     }
+
+    // Capture microphone
+    try {
+      this.micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true }
+      });
+    } catch (err) {
+      console.warn('Mic access warning:', err);
+      this.micStream = null;
+    }
+
+    this.setupAudioMixing();
+
+    return {
+      videoTrack: this.displayStream && this.displayStream.getVideoTracks().length > 0 ? this.displayStream.getVideoTracks()[0] : null,
+      stream: this.combinedStream
+    };
   }
 
   /**
-   * Start Microphone Only capture
+   * Option 2: Camera Video + Microphone Audio (Smartphone & Desktop)
+   */
+  async startCameraAudioCapture() {
+    try {
+      this.cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: { echoCancellation: true, noiseSuppression: true }
+      });
+      this.micStream = this.cameraStream;
+    } catch (err) {
+      console.warn('Camera permission fallback to audio only:', err);
+      this.cameraStream = null;
+      return await this.startMicOnlyCapture();
+    }
+
+    this.setupAudioMixing();
+
+    return {
+      videoTrack: this.cameraStream ? this.cameraStream.getVideoTracks()[0] : null,
+      stream: this.combinedStream
+    };
+  }
+
+  /**
+   * Option 3: Microphone Audio Only
    */
   async startMicOnlyCapture() {
     try {
       this.micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true
-        }
+        audio: { echoCancellation: true, noiseSuppression: true }
       });
-
-      this.displayStream = null;
-      this.setupAudioMixing();
-
-      return {
-        videoTrack: null,
-        hasSystemAudio: false,
-        hasMicAudio: true
-      };
-    } catch (error) {
-      console.error('Error initiating mic capture:', error);
-      throw error;
+    } catch (err) {
+      console.error('Error in mic capture:', err);
+      throw err;
     }
+
+    this.displayStream = null;
+    this.cameraStream = null;
+    this.setupAudioMixing();
+
+    return {
+      videoTrack: null,
+      stream: this.combinedStream
+    };
   }
 
   /**
-   * Set up Web Audio API nodes to combine mic & system streams into a single audio output & visualizer
+   * Mix audio & video streams via Web Audio API
    */
   setupAudioMixing() {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    this.audioContext = new AudioCtx();
-    const destination = this.audioContext.createMediaStreamDestination();
+    if (!this.audioContext || this.audioContext.state === 'closed') {
+      this.audioContext = new AudioCtx();
+    }
 
+    const destination = this.audioContext.createMediaStreamDestination();
     this.analyser = this.audioContext.createAnalyser();
     this.analyser.fftSize = 128;
 
-    // Mixed stream container
     const tracks = [];
 
-    // Video track if present
+    // Collect Video Tracks (Display Screen or Camera)
     if (this.displayStream && this.displayStream.getVideoTracks().length > 0) {
       tracks.push(this.displayStream.getVideoTracks()[0]);
+    } else if (this.cameraStream && this.cameraStream.getVideoTracks().length > 0) {
+      tracks.push(this.cameraStream.getVideoTracks()[0]);
     }
 
     // System Audio node
@@ -138,35 +147,31 @@ class MediaEngine {
         new MediaStream([this.displayStream.getAudioTracks()[0]])
       );
       this.systemGainNode = this.audioContext.createGain();
-      this.systemGainNode.gain.value = 1.0;
       sysSource.connect(this.systemGainNode);
       this.systemGainNode.connect(destination);
       this.systemGainNode.connect(this.analyser);
     }
 
-    // User Mic Audio node
+    // Mic Audio node
     if (this.micStream && this.micStream.getAudioTracks().length > 0) {
-      const micSource = this.audioContext.createMediaStreamSource(this.micStream);
+      const micSource = this.audioContext.createMediaStreamSource(
+        new MediaStream([this.micStream.getAudioTracks()[0]])
+      );
       this.micGainNode = this.audioContext.createGain();
-      this.micGainNode.gain.value = 1.0;
       micSource.connect(this.micGainNode);
       this.micGainNode.connect(destination);
       this.micGainNode.connect(this.analyser);
     }
 
-    // Add mixed audio track to combinedStream
     destination.stream.getAudioTracks().forEach(track => tracks.push(track));
     this.combinedStream = new MediaStream(tracks);
 
-    // Start Audio Frequency Visualizer animation
     this.startVisualizer();
   }
 
-  /**
-   * Canvas Spectrum Waveform Visualizer
-   */
   startVisualizer() {
     if (!this.analyser || !this.canvasCtx) return;
+    if (this.animFrameId) cancelAnimationFrame(this.animFrameId);
 
     const bufferLength = this.analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
@@ -180,7 +185,6 @@ class MediaEngine {
 
       this.canvasCtx.clearRect(0, 0, width, height);
 
-      // Compute average volume for meter
       let sum = 0;
       for (let i = 0; i < bufferLength; i++) {
         sum += dataArray[i];
@@ -191,14 +195,12 @@ class MediaEngine {
         this.onVolumeChange(avgVolume);
       }
 
-      // Draw futuristic cyber wave bars
       const barWidth = (width / bufferLength) * 2;
       let x = 0;
 
       for (let i = 0; i < bufferLength; i++) {
         const barHeight = (dataArray[i] / 255) * height * 0.85;
 
-        // Gradient color based on frequency
         const gradient = this.canvasCtx.createLinearGradient(0, height, 0, height - barHeight);
         gradient.addColorStop(0, 'rgba(0, 240, 255, 0.2)');
         gradient.addColorStop(0.5, 'rgba(112, 0, 255, 0.8)');
@@ -214,16 +216,21 @@ class MediaEngine {
     draw();
   }
 
-  /**
-   * MediaRecorder: Start recording meeting audio/video
-   */
   startRecording() {
-    if (!this.combinedStream && !this.displayStream) return;
+    const streamToRecord = this.combinedStream || this.cameraStream || this.displayStream || this.micStream;
+    if (!streamToRecord) return false;
 
-    const streamToRecord = this.combinedStream || this.displayStream;
     this.recordedChunks = [];
 
-    const options = { mimeType: 'video/webm;codecs=vp9,opus' };
+    let options = {};
+    if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
+      options = { mimeType: 'video/webm;codecs=vp9,opus' };
+    } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+      options = { mimeType: 'video/mp4' };
+    } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+      options = { mimeType: 'audio/webm' };
+    }
+
     try {
       this.mediaRecorder = new MediaRecorder(streamToRecord, options);
     } catch (e) {
@@ -238,11 +245,9 @@ class MediaEngine {
 
     this.mediaRecorder.start(1000);
     this.isRecording = true;
+    return true;
   }
 
-  /**
-   * MediaRecorder: Stop recording and trigger file download
-   */
   stopRecording() {
     return new Promise((resolve) => {
       if (!this.mediaRecorder || this.mediaRecorder.state === 'inactive') {
@@ -251,37 +256,28 @@ class MediaEngine {
       }
 
       this.mediaRecorder.onstop = () => {
-        const blob = new Blob(this.recordedChunks, { type: 'video/webm' });
+        const mimeType = this.mediaRecorder.mimeType || 'video/webm';
+        const blob = new Blob(this.recordedChunks, { type: mimeType });
         const url = URL.createObjectURL(blob);
         this.isRecording = false;
-        resolve({ blob, url });
+        resolve({ blob, url, extension: mimeType.includes('mp4') ? 'mp4' : 'webm' });
       };
 
       this.mediaRecorder.stop();
     });
   }
 
-  /**
-   * Clean up all media tracks and audio contexts
-   */
   stopAll() {
     if (this.animFrameId) cancelAnimationFrame(this.animFrameId);
-
-    if (this.displayStream) {
-      this.displayStream.getTracks().forEach(t => t.stop());
-      this.displayStream = null;
-    }
-    if (this.micStream) {
-      this.micStream.getTracks().forEach(t => t.stop());
-      this.micStream = null;
-    }
-    if (this.combinedStream) {
-      this.combinedStream.getTracks().forEach(t => t.stop());
-      this.combinedStream = null;
-    }
-    if (this.audioContext && this.audioContext.state !== 'closed') {
-      this.audioContext.close();
-    }
+    [this.displayStream, this.micStream, this.cameraStream, this.combinedStream].forEach(stream => {
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+      }
+    });
+    this.displayStream = null;
+    this.micStream = null;
+    this.cameraStream = null;
+    this.combinedStream = null;
   }
 }
 

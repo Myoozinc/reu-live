@@ -755,6 +755,7 @@ body.dark-theme {
 
 .bg-purple { background: linear-gradient(135deg, #7000ff, #9d4edd); }
 .bg-cyan { background: linear-gradient(135deg, #00f0ff, #00a8ff); }
+.bg-pink { background: linear-gradient(135deg, #ff007a, #ff2a85); }
 
 .tag-recommend {
   display: inline-block;

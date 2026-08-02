@@ -1,6 +1,6 @@
 /**
  * ReuLive - Main Application Controller
- * Orchestrates MediaEngine, STTEngine, AIEngine, Mobile & Desktop Navigation.
+ * Orchestrates MediaEngine, STTEngine, AIEngine, Mobile & Desktop Capture.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -56,6 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Elements - Modals
   const modalConnection = document.getElementById('modalConnection');
   const btnCloseModalConnect = document.getElementById('btnCloseModalConnect');
+  const optCameraVideo = document.getElementById('optCameraVideo');
   const optScreenAudio = document.getElementById('optScreenAudio');
   const optMicOnly = document.getElementById('optMicOnly');
 
@@ -85,7 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateAIUI(aiResults);
   };
 
-  // Modal Listeners
+  // Modal Handlers
   const openConnectModal = () => { modalConnection.style.display = 'flex'; };
   btnConnectZoom.addEventListener('click', openConnectModal);
   if (btnMainConnect) btnMainConnect.addEventListener('click', openConnectModal);
@@ -96,49 +97,98 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target === modalConnection) modalConnection.style.display = 'none';
   });
 
-  // Screen + Audio Capture (Zoom / Desktop)
-  optScreenAudio.addEventListener('click', async () => {
+  // Helper to enable recording & listening state
+  const enableRecordingState = (label, hasVideo = false) => {
     modalConnection.style.display = 'none';
-    try {
-      const result = await mediaEngine.startScreenAudioCapture();
-      
-      if (result.videoTrack) {
-        remoteVideo.srcObject = new MediaStream([result.videoTrack]);
-        remoteVideo.classList.add('active');
-        videoPlaceholder.style.display = 'none';
-        btnToggleVideo.disabled = false;
+    sourceLabel.textContent = `Fuente: ${label}`;
+    
+    if (hasVideo && mediaEngine.cameraStream) {
+      remoteVideo.srcObject = mediaEngine.cameraStream;
+      remoteVideo.classList.add('active');
+      videoPlaceholder.style.display = 'none';
+    } else if (hasVideo && mediaEngine.displayStream) {
+      remoteVideo.srcObject = mediaEngine.displayStream;
+      remoteVideo.classList.add('active');
+      videoPlaceholder.style.display = 'none';
+    } else {
+      videoPlaceholder.style.display = 'none';
+    }
+
+    btnToggleAudio.disabled = false;
+    if (hasVideo) btnToggleVideo.disabled = false;
+
+    // Enable Big Green Recording Button immediately
+    btnStartRecord.disabled = false;
+    btnExportReport.disabled = false;
+
+    updateStatus(true, 'CONECTADO');
+    sttEngine.startListening();
+    startTimer();
+  };
+
+  // Option A: Camera Video + Audio (Smartphone Video Capture)
+  if (optCameraVideo) {
+    optCameraVideo.addEventListener('click', async () => {
+      try {
+        const result = await mediaEngine.startCameraAudioCapture();
+        enableRecordingState('Cámara de Video & Audio', !!result.videoTrack);
+      } catch (err) {
+        alert('Accediendo en modo solo micrófono...');
+        const result = await mediaEngine.startMicOnlyCapture();
+        enableRecordingState('Micrófono del Dispositivo', false);
       }
+    });
+  }
 
-      sourceLabel.textContent = 'Fuente: Zoom / Pantalla con Audio';
-      btnToggleAudio.disabled = false;
-      btnStartRecord.disabled = false;
-      btnExportReport.disabled = false;
+  // Option B: Screen / Zoom Window + System Audio (Desktop)
+  if (optScreenAudio) {
+    optScreenAudio.addEventListener('click', async () => {
+      try {
+        const result = await mediaEngine.startScreenAudioCapture();
+        enableRecordingState('Zoom / Pantalla del Dispositivo', !!result.videoTrack);
+      } catch (err) {
+        alert('Captura de pantalla no disponible en este navegador. Iniciando captura de audio...');
+        const result = await mediaEngine.startMicOnlyCapture();
+        enableRecordingState('Micrófono del Dispositivo', false);
+      }
+    });
+  }
 
-      updateStatus(true, 'EN VIVO - ZOOM');
-      sttEngine.startListening();
-      startTimer();
+  // Option C: Mic Only Capture
+  if (optMicOnly) {
+    optMicOnly.addEventListener('click', async () => {
+      try {
+        await mediaEngine.startMicOnlyCapture();
+        enableRecordingState('Micrófono del Dispositivo', false);
+      } catch (err) {
+        alert('No se pudo acceder al micrófono del dispositivo.');
+      }
+    });
+  }
 
-    } catch (err) {
-      alert('Permiso de captura de pantalla/audio denegado.');
+  // Recording Button Logic (Green Iniciar Grabación)
+  btnStartRecord.addEventListener('click', () => {
+    const success = mediaEngine.startRecording();
+    if (success) {
+      btnStartRecord.style.display = 'none';
+      btnStopRecord.style.display = 'inline-flex';
+      updateStatus(true, 'GRABANDO...');
+    } else {
+      alert('Inicia primero la captura de audio o video.');
     }
   });
 
-  // Mic Only Capture (Smartphone / Mobile Friendly)
-  optMicOnly.addEventListener('click', async () => {
-    modalConnection.style.display = 'none';
-    try {
-      await mediaEngine.startMicOnlyCapture();
-      sourceLabel.textContent = 'Fuente: Micrófono del Dispositivo';
-      videoPlaceholder.style.display = 'none';
-      btnToggleAudio.disabled = false;
-      btnStartRecord.disabled = false;
-      btnExportReport.disabled = false;
+  btnStopRecord.addEventListener('click', async () => {
+    const recordResult = await mediaEngine.stopRecording();
+    btnStopRecord.style.display = 'none';
+    btnStartRecord.style.display = 'inline-flex';
+    updateStatus(true, 'CONECTADO');
 
-      updateStatus(true, 'EN VIVO - MIC');
-      sttEngine.startListening();
-      startTimer();
-    } catch (err) {
-      alert('No se pudo acceder al micrófono.');
+    if (recordResult && recordResult.url) {
+      const a = document.createElement('a');
+      a.href = recordResult.url;
+      a.download = `ReuLive-Grabacion-${new Date().toISOString().slice(0,10)}.${recordResult.extension || 'webm'}`;
+      a.click();
     }
   });
 
@@ -157,7 +207,6 @@ document.addEventListener('DOMContentLoaded', () => {
         mediaSection.style.display = 'none';
         copilotSection.style.display = 'flex';
 
-        // Switch internal tab inside copilot card
         tabBtns.forEach(b => b.classList.remove('active'));
         tabContents.forEach(c => c.classList.remove('active'));
 
@@ -182,27 +231,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Recording Controls
-  btnStartRecord.addEventListener('click', () => {
-    mediaEngine.startRecording();
-    btnStartRecord.style.display = 'none';
-    btnStopRecord.style.display = 'inline-flex';
-  });
-
-  btnStopRecord.addEventListener('click', async () => {
-    const recordResult = await mediaEngine.stopRecording();
-    btnStopRecord.style.display = 'none';
-    btnStartRecord.style.display = 'inline-flex';
-
-    if (recordResult && recordResult.url) {
-      const a = document.createElement('a');
-      a.href = recordResult.url;
-      a.download = `ReuLive-Reunion-${new Date().toISOString().slice(0,10)}.webm`;
-      a.click();
-    }
-  });
-
-  // Manual Refresh Copilot Answers
+  // Refresh Copilot Answers
   btnRefreshCopilot.addEventListener('click', async () => {
     const aiResults = await aiEngine.processTranscript(sttEngine.transcriptHistory);
     updateAIUI(aiResults);
@@ -282,7 +311,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateStatus(isLive, label) {
     if (isLive) {
       liveStatusBadge.className = 'status-badge status-live';
-      statusText.textContent = label || 'GRABANDO EN VIVO';
+      statusText.textContent = label || 'CONECTADO';
     } else {
       liveStatusBadge.className = 'status-badge status-offline';
       statusText.textContent = 'Listo';
