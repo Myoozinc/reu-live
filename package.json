@@ -1,0 +1,19 @@
+{
+  "name": "reu-live",
+  "version": "1.0.0",
+  "description": "Real-time AI Meeting Recorder, Main Topic Extractor, and Live Copilot",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx -y serve .",
+    "dev": "npx -y serve ."
+  },
+  "keywords": [
+    "zoom",
+    "meeting-recorder",
+    "ai-copilot",
+    "speech-to-text",
+    "real-time"
+  ],
+  "author": "",
+  "license": "MIT"
+}

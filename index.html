@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ReuLive AI | Grabador de Reuniones & Copiloto en Tiempo Real</title>
+  <meta name="description" content="Graba tus reuniones de Zoom y del sistema en tiempo real, extrae el tema principal en vivo y recibe respuestas sugeridas por inteligencia artificial durante la llamada.">
+  <!-- Fonts & Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="dark-theme">
+  
+  <!-- Header Bar -->
+  <header class="app-header">
+    <div class="logo-group">
+      <div class="logo-icon">
+        <i class="fa-solid fa-waveform-lines"></i>
+      </div>
+      <div class="logo-text">
+        <h1>ReuLive <span class="badge-ai">AI LIVE</span></h1>
+        <p class="subtitle">Copiloto & Grabador de Reuniones</p>
+      </div>
+    </div>
+
+    <!-- Live Status & Topic Badge -->
+    <div class="status-center">
+      <div id="liveStatusBadge" class="status-badge status-offline">
+        <span class="status-dot"></span>
+        <span id="statusText">Listo para conectar</span>
+      </div>
+
+      <div class="main-topic-pill" id="mainTopicPill">
+        <i class="fa-solid fa-compass-drafting text-cyan"></i>
+        <span class="topic-label">Tema Principal:</span>
+        <strong id="currentTopicText">En espera de audio de la reunión...</strong>
+      </div>
+    </div>
+
+    <!-- Top Action Bar -->
+    <div class="header-actions">
+      <div class="timer-display" id="meetingTimer">
+        <i class="fa-regular fa-clock"></i>
+        <span id="timerText">00:00:00</span>
+      </div>
+
+      <button id="btnConnectZoom" class="btn btn-primary glow-btn">
+        <i class="fa-solid fa-plug-circle-bolt"></i> Conectar Zoom / Audio
+      </button>
+
+      <button id="btnGitGuide" class="btn btn-secondary">
+        <i class="fa-brands fa-github"></i> Git & Vercel
+      </button>
+
+      <button id="btnExportReport" class="btn btn-outline" disabled>
+        <i class="fa-solid fa-file-export"></i> Exportar
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Application Dashboard -->
+  <main class="app-container">
+    
+    <!-- Left Section: Screen Capture / Video Viewport + Audio Visualizer -->
+    <section class="media-section">
+      <div class="viewport-card glass-panel">
+        
+        <div class="viewport-header">
+          <div class="viewport-title">
+            <i class="fa-solid fa-display text-accent"></i>
+            <span id="sourceLabel">Fuente: Sin Conectar</span>
+          </div>
+          <div class="viewport-controls">
+            <button id="btnToggleVideo" class="icon-btn" title="Alternar Video" disabled>
+              <i class="fa-solid fa-video"></i>
+            </button>
+            <button id="btnToggleAudio" class="icon-btn" title="Alternar Audio" disabled>
+              <i class="fa-solid fa-microphone"></i>
+            </button>
+            <span class="badge-tag" id="resolutionTag">1080p 60fps</span>
+          </div>
+        </div>
+
+        <!-- Video Player Display -->
+        <div class="video-container">
+          <video id="remoteVideo" autoplay playsinline muted class="video-feed"></video>
+          
+          <div class="video-placeholder" id="videoPlaceholder">
+            <div class="placeholder-icon">
+              <i class="fa-solid fa-video-slash"></i>
+            </div>
+            <h3>Ningún dispositivo o Zoom conectado</h3>
+            <p>Haz clic en <strong>"Conectar Zoom / Audio"</strong> arriba para transmitir pantalla, audio de Zoom o probar el <strong>Modo Simulación Live</strong>.</p>
+            <button class="btn btn-primary" id="btnQuickStartDemo">
+              <i class="fa-solid fa-bolt"></i> Probar Demo en Vivo Ahora
+            </button>
+          </div>
+
+          <!-- Dynamic Audio Frequency Overlay -->
+          <div class="canvas-overlay">
+            <canvas id="audioVisualizerCanvas"></canvas>
+          </div>
+
+          <!-- Floating Live Metrics Overlay -->
+          <div class="live-metrics-overlay">
+            <div class="metric-chip">
+              <span class="metric-dot live-pulse"></span>
+              <span>Audio Entrada: <strong id="micVolumeLevel">0%</strong></span>
+            </div>
+            <div class="metric-chip">
+              <i class="fa-solid fa-chart-line text-emerald"></i>
+              <span>Sentimiento: <strong id="sentimentText">Neutral</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Controls Footer -->
+        <div class="viewport-footer">
+          <div class="control-group">
+            <button id="btnStartRecord" class="btn btn-success" disabled>
+              <i class="fa-solid fa-circle-dot"></i> Iniciar Grabación
+            </button>
+            <button id="btnStopRecord" class="btn btn-danger" style="display: none;">
+              <i class="fa-solid fa-square"></i> Detener & Guardar
+            </button>
+          </div>
+
+          <div class="audio-mixer-info">
+            <div class="channel">
+              <i class="fa-solid fa-desktop text-purple"></i> Audio Zoom/Sistema:
+              <div class="meter-bar"><div class="meter-fill" id="systemAudioMeter"></div></div>
+            </div>
+            <div class="channel">
+              <i class="fa-solid fa-microphone text-cyan"></i> Tu Micrófono:
+              <div class="meter-bar"><div class="meter-fill" id="userMicMeter"></div></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Right Section: Real-time Copilot & Dynamic Insights Panel -->
+    <aside class="copilot-section">
+      <div class="copilot-card glass-panel">
+        
+        <!-- Navigation Tabs -->
+        <nav class="copilot-tabs">
+          <button class="tab-btn active" data-tab="tabCopilot">
+            <i class="fa-solid fa-robot"></i> Copiloto en Vivo
+            <span class="tab-badge" id="copilotBadgeCount">4</span>
+          </button>
+          <button class="tab-btn" data-tab="tabTranscript">
+            <i class="fa-solid fa-closed-captioning"></i> Transcripción
+          </button>
+          <button class="tab-btn" data-tab="tabAnalytics">
+            <i class="fa-solid fa-brain"></i> Temas & Acuerdos
+          </button>
+        </nav>
+
+        <!-- TAB 1: Real-time AI Suggested Responses -->
+        <div id="tabCopilot" class="tab-content active">
+          
+          <div class="copilot-header">
+            <div class="copilot-title">
+              <h3><i class="fa-solid fa-sparkles text-amber"></i> Respuestas Sugeridas en Tiempo Real</h3>
+              <p>Basado en lo que se está hablando en tu llamada ahora mismo:</p>
+            </div>
+            <button id="btnRefreshCopilot" class="btn-icon-soft" title="Generar nuevas opciones">
+              <i class="fa-solid fa-rotate"></i>
+            </button>
+          </div>
+
+          <!-- Dynamic Suggestions Grid -->
+          <div class="suggestions-list" id="suggestionsContainer">
+            
+            <!-- Default Welcome Suggestions -->
+            <div class="suggestion-card card-direct">
+              <div class="card-tag"><i class="fa-solid fa-circle-check"></i> Respuesta Directa</div>
+              <p class="suggestion-text">"Perfecto, entiendo el objetivo. Podemos revisar los datos clave y avanzar con los siguientes pasos inmediatamente."</p>
+              <div class="card-actions">
+                <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
+                <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
+              </div>
+            </div>
+
+            <div class="suggestion-card card-proposal">
+              <div class="card-tag"><i class="fa-solid fa-lightbulb"></i> Propuesta Alternativa</div>
+              <p class="suggestion-text">"Una alternativa eficiente sería automatizar esa etapa usando un script o API para ahorrar tiempo de desarrollo."</p>
+              <div class="card-actions">
+                <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
+                <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
+              </div>
+            </div>
+
+            <div class="suggestion-card card-question">
+              <div class="card-tag"><i class="fa-solid fa-circle-question"></i> Pregunta Clave</div>
+              <p class="suggestion-text">"¿Cuál es el tiempo estimado de entrega y quién liderará la aprobación final de esta fase?"</p>
+              <div class="card-actions">
+                <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
+                <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
+              </div>
+            </div>
+
+            <div class="suggestion-card card-summary">
+              <div class="card-tag"><i class="fa-solid fa-list-check"></i> Resumen de Cierre</div>
+              <p class="suggestion-text">"Para confirmar: acordamos definir el alcance hoy y enviar la propuesta formal mañana a primera hora."</p>
+              <div class="card-actions">
+                <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
+                <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Secret Private AI Query Bar -->
+          <div class="copilot-input-bar">
+            <div class="input-wrapper">
+              <i class="fa-solid fa-wand-magic-sparkles text-purple"></i>
+              <input type="text" id="customPromptInput" placeholder="Pregunta en secreto al copiloto durante la reunión...">
+              <button id="btnSendCustomPrompt" class="btn-send">
+                <i class="fa-solid fa-paper-plane"></i>
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- TAB 2: Real-time Transcript Feed -->
+        <div id="tabTranscript" class="tab-content">
+          <div class="transcript-header">
+            <h3><i class="fa-solid fa-stream"></i> Transcripción en Directo</h3>
+            <div class="transcript-actions">
+              <button id="btnClearTranscript" class="btn-sm"><i class="fa-solid fa-trash"></i> Limpiar</button>
+              <button id="btnAutoScroll" class="btn-sm active"><i class="fa-solid fa-arrow-down-long"></i> Auto-Scroll</button>
+            </div>
+          </div>
+
+          <div class="transcript-stream" id="transcriptStream">
+            <div class="stream-item system-msg">
+              <span class="time">00:00</span>
+              <span class="text"><i class="fa-solid fa-info-circle"></i> Inicia o conecta el audio para comenzar a transcribir la llamada en tiempo real...</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 3: Topic Breakdown & Action Items -->
+        <div id="tabAnalytics" class="tab-content">
+          <div class="analytics-header">
+            <h3><i class="fa-solid fa-layer-group"></i> Estructura & Puntos Clave</h3>
+          </div>
+
+          <div class="analytics-body">
+            
+            <div class="analytics-card">
+              <h4><i class="fa-solid fa-tags text-cyan"></i> Temas Tratados en la Reunión</h4>
+              <ul class="topic-timeline" id="topicTimelineList">
+                <li class="active-topic">
+                  <span class="time-badge">Ahora</span>
+                  <div class="topic-info">
+                    <strong>Bienvenida y Contexto General</strong>
+                    <p>Inicio de sesión y sincronización de participantes.</p>
+                  </div>
+                </li>
+              </ul>
+            </div>
+
+            <div class="analytics-card">
+              <h4><i class="fa-solid fa-handshake text-emerald"></i> Acuerdos Tomados</h4>
+              <ul class="bullet-list" id="agreementsList">
+                <li><i class="fa-solid fa-check text-emerald"></i> Sistema de grabación y transcripción habilitado.</li>
+              </ul>
+            </div>
+
+            <div class="analytics-card">
+              <h4><i class="fa-solid fa-list-check text-amber"></i> Tareas & Action Items</h4>
+              <ul class="bullet-list" id="actionItemsList">
+                <li><i class="fa-regular fa-square text-amber"></i> Conectar el repositorio de GitHub con Vercel.</li>
+              </ul>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- MODAL 1: Zoom / System Audio Connection Wizard -->
+  <div class="modal-backdrop" id="modalConnection" style="display: none;">
+    <div class="modal-card glass-panel">
+      <div class="modal-header">
+        <h2><i class="fa-solid fa-plug-circle-bolt text-accent"></i> Conectar Audio & Pantalla</h2>
+        <button class="btn-close" id="btnCloseModalConnect"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <div class="modal-body">
+        <p class="modal-desc">Selecciona cómo deseas capturar el audio o video de tu llamada de Zoom o reunión:</p>
+
+        <div class="connection-options">
+          
+          <div class="option-card" id="optScreenAudio">
+            <div class="option-icon bg-purple">
+              <i class="fa-solid fa-desktop"></i>
+            </div>
+            <div class="option-content">
+              <h3>Zoom / Pantalla del Sistema con Audio</h3>
+              <p>Captura el audio directamente de la ventana de Zoom o pantalla completa y combínalo con tu micrófono.</p>
+              <span class="tag-recommend">Recomendado para Zoom</span>
+            </div>
+          </div>
+
+          <div class="option-card" id="optMicOnly">
+            <div class="option-icon bg-cyan">
+              <i class="fa-solid fa-microphone-lines"></i>
+            </div>
+            <div class="option-content">
+              <h3>Solo Micrófono del Dispositivo</h3>
+              <p>Ideal si estás en una llamada en altavoz o quieres transcribir tu voz en directo.</p>
+            </div>
+          </div>
+
+          <div class="option-card" id="optLiveDemo">
+            <div class="option-icon bg-amber">
+              <i class="fa-solid fa-play"></i>
+            </div>
+            <div class="option-content">
+              <h3>Simulación en Vivo de Reunión Zoom (Demo)</h3>
+              <p>Prueba el copiloto inmediatamente con una llamada de reunión simulada de 2 hablantes en tiempo real.</p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 2: Git & Vercel Deployment Helper -->
+  <div class="modal-backdrop" id="modalGitVercel" style="display: none;">
+    <div class="modal-card glass-panel modal-wide">
+      <div class="modal-header">
+        <h2><i class="fa-brands fa-github text-white"></i> Guía Paso a Paso: Git & Vercel</h2>
+        <button class="btn-close" id="btnCloseModalGit"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <div class="modal-body">
+        
+        <div class="guide-steps">
+          
+          <div class="step-box">
+            <div class="step-num">1</div>
+            <div class="step-content">
+              <h3>Subir los archivos a GitHub</h3>
+              <p>Tu repositorio <code>https://github.com/Myoozinc/reu-live.git</code> está creado pero actualmente está vacío. Copia y ejecuta estos comandos en tu terminal:</p>
+              <div class="code-block">
+                <code>
+                  git init<br>
+                  git add .<br>
+                  git commit -m "feat: Initial ReuLive application release"<br>
+                  git branch -M main<br>
+                  git remote add origin https://github.com/Myoozinc/reu-live.git<br>
+                  git push -u origin main
+                </code>
+                <button class="btn-copy-code" data-code='git init && git add . && git commit -m "feat: Initial ReuLive release" && git branch -M main && git remote add origin https://github.com/Myoozinc/reu-live.git && git push -u origin main'>
+                  <i class="fa-regular fa-copy"></i> Copiar Comandos
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="step-box">
+            <div class="step-num">2</div>
+            <div class="step-content">
+              <h3>Desplegar automáticamente en Vercel</h3>
+              <p>Una vez completado el <code>git push</code>, regresa a la pestaña de Vercel y haz clic en <strong>"Deploy"</strong> o recarga la página. Vercel detectará los archivos y creará tu enlace web público en segundos.</p>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- JS Modules -->
+  <script src="js/mediaEngine.js"></script>
+  <script src="js/sttEngine.js"></script>
+  <script src="js/aiEngine.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
