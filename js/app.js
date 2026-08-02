@@ -1,261 +1,234 @@
 /**
  * ReuLive - Main Application Controller
- * Orchestrates MediaEngine, STTEngine, AIEngine, Speaker Diarization & Instant Copilot.
+ * Unified flow: One button to start capture, transcription, and AI copilot.
+ * Everything visible simultaneously on the same screen.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Instantiate Core Engines
+  // Core Engines
   const mediaEngine = new MediaEngine();
   const sttEngine = new STTEngine();
   const aiEngine = new AIEngine();
 
-  // Elements - Header & Status
+  // State
+  let isActive = false;
+  let timerInterval = null;
+  let timerSeconds = 0;
+
+  // ===== DOM Elements =====
+  // Header
   const liveStatusBadge = document.getElementById('liveStatusBadge');
   const statusText = document.getElementById('statusText');
   const currentTopicText = document.getElementById('currentTopicText');
-  const analyticsCurrentTopic = document.getElementById('analyticsCurrentTopic');
   const timerText = document.getElementById('timerText');
-  const btnConnectZoom = document.getElementById('btnConnectZoom');
-  const btnMainConnect = document.getElementById('btnMainConnect');
+  const btnCapture = document.getElementById('btnCapture');
+  const btnCaptureText = document.getElementById('btnCaptureText');
   const btnExportReport = document.getElementById('btnExportReport');
 
-  // Elements - Viewport
-  const remoteVideo = document.getElementById('remoteVideo');
-  const videoPlaceholder = document.getElementById('videoPlaceholder');
+  // Capture Section
+  const captureVideo = document.getElementById('captureVideo');
+  const capturePlaceholder = document.getElementById('capturePlaceholder');
+  const btnPlaceholderStart = document.getElementById('btnPlaceholderStart');
   const sourceLabel = document.getElementById('sourceLabel');
   const audioCanvas = document.getElementById('audioVisualizerCanvas');
   const micVolumeLevel = document.getElementById('micVolumeLevel');
   const sentimentText = document.getElementById('sentimentText');
   const systemAudioMeter = document.getElementById('systemAudioMeter');
   const userMicMeter = document.getElementById('userMicMeter');
-  
-  const btnStartRecord = document.getElementById('btnStartRecord');
-  const btnStopRecord = document.getElementById('btnStopRecord');
-  const btnToggleVideo = document.getElementById('btnToggleVideo');
-  const btnToggleAudio = document.getElementById('btnToggleAudio');
+  const subtitlesText = document.getElementById('subtitlesText');
+  const subtitlesOverlay = document.getElementById('subtitlesOverlay');
 
-  // Mobile Navigation
-  const mobileNavItems = document.querySelectorAll('.nav-item');
-  const mediaSection = document.getElementById('mediaSection');
-  const copilotSection = document.getElementById('copilotSection');
-
-  // Elements - Copilot & Tabs
-  const tabBtns = document.querySelectorAll('.tab-btn');
-  const tabContents = document.querySelectorAll('.tab-content');
+  // Copilot Section
   const suggestionsContainer = document.getElementById('suggestionsContainer');
-  const transcriptStream = document.getElementById('transcriptStream');
-  const btnClearTranscript = document.getElementById('btnClearTranscript');
   const btnRefreshCopilot = document.getElementById('btnRefreshCopilot');
-  const topicTimelineList = document.getElementById('topicTimelineList');
-  const agreementsList = document.getElementById('agreementsList');
-  const actionItemsList = document.getElementById('actionItemsList');
-  const speakerNameInput = document.getElementById('speakerNameInput');
-
   const customPromptInput = document.getElementById('customPromptInput');
   const btnSendCustomPrompt = document.getElementById('btnSendCustomPrompt');
 
-  // Elements - Modals
-  const modalConnection = document.getElementById('modalConnection');
-  const btnCloseModalConnect = document.getElementById('btnCloseModalConnect');
-  const optCameraVideo = document.getElementById('optCameraVideo');
-  const optScreenAudio = document.getElementById('optScreenAudio');
-  const optMicOnly = document.getElementById('optMicOnly');
+  // Transcript
+  const transcriptStream = document.getElementById('transcriptStream');
+  const transcriptCount = document.getElementById('transcriptCount');
+  const btnClearTranscript = document.getElementById('btnClearTranscript');
+  const speakerNameInput = document.getElementById('speakerNameInput');
 
-  // State
-  let timerInterval = null;
-  let timerSeconds = 0;
-  let isAutoScroll = true;
+  // Analytics
+  const analyticsCurrentTopic = document.getElementById('analyticsCurrentTopic');
+  const agreementsList = document.getElementById('agreementsList');
+  const actionItemsList = document.getElementById('actionItemsList');
 
-  // Speaker Name Config Event Listener
-  if (speakerNameInput) {
-    speakerNameInput.addEventListener('input', (e) => {
-      const val = e.target.value.trim() || 'Hablante 1 (Interlocutor)';
-      sttEngine.setSpeakerName('zoom', val);
-    });
-  }
-
-  // Quick Speech Injection Buttons
-  document.querySelectorAll('.chip-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const text = btn.getAttribute('data-speech');
-      sttEngine.injectSpeechChunk(text, 'zoom');
-    });
-  });
-
-  // Initialize Canvas Visualizer
+  // ===== Initialize =====
   mediaEngine.initCanvas(audioCanvas);
 
+  // Volume meter callback
   mediaEngine.onVolumeChange = (vol) => {
-    micVolumeLevel.textContent = `${vol}%`;
-    userMicMeter.style.width = `${Math.min(vol * 1.5, 100)}%`;
-    if (vol > 5) {
-      systemAudioMeter.style.width = `${Math.min(vol * 1.2 + 10, 100)}%`;
-    } else {
-      systemAudioMeter.style.width = '0%';
+    if (micVolumeLevel) micVolumeLevel.textContent = `${vol}%`;
+    if (userMicMeter) userMicMeter.style.width = `${Math.min(vol * 1.5, 100)}%`;
+    if (systemAudioMeter) {
+      systemAudioMeter.style.width = vol > 5 ? `${Math.min(vol * 1.2 + 10, 100)}%` : '0%';
     }
   };
 
-  // Setup STT Callbacks - ULTRA-FAST Real-time update
-  sttEngine.onTranscriptChunk = async (chunk) => {
+  // Speaker name input
+  if (speakerNameInput) {
+    speakerNameInput.addEventListener('input', (e) => {
+      sttEngine.setSpeakerName(e.target.value.trim());
+    });
+  }
+
+  // ===== STT Callbacks =====
+  // Live subtitles (interim results)
+  sttEngine.onInterimResult = (text) => {
+    if (subtitlesText) {
+      subtitlesText.textContent = text;
+      subtitlesOverlay.classList.toggle('visible', text.length > 0);
+    }
+  };
+
+  // Final results → AI processing + transcript update
+  sttEngine.onFinalResult = async (chunk) => {
+    // Add to transcript
     appendTranscriptItem(chunk);
 
-    // Process AI Copilot Response Cards immediately (< 200ms)
-    const aiResults = await aiEngine.processTranscript(sttEngine.transcriptHistory);
+    // Show final text briefly as subtitle
+    if (subtitlesText) {
+      subtitlesText.textContent = chunk.text;
+      subtitlesOverlay.classList.add('visible');
+      setTimeout(() => {
+        if (subtitlesText.textContent === chunk.text) {
+          subtitlesOverlay.classList.remove('visible');
+        }
+      }, 3000);
+    }
+
+    // Process with AI Engine immediately
+    const aiResults = aiEngine.processTranscript(sttEngine.transcriptHistory);
     updateAIUI(aiResults);
   };
 
-  // Modal Handlers
-  const openConnectModal = () => { modalConnection.style.display = 'flex'; };
-  btnConnectZoom.addEventListener('click', openConnectModal);
-  if (btnMainConnect) btnMainConnect.addEventListener('click', openConnectModal);
-
-  btnCloseModalConnect.addEventListener('click', () => { modalConnection.style.display = 'none'; });
-
-  modalConnection.addEventListener('click', (e) => {
-    if (e.target === modalConnection) modalConnection.style.display = 'none';
-  });
-
-  const enableRecordingState = (label, hasVideo = false) => {
-    modalConnection.style.display = 'none';
-    sourceLabel.textContent = `Fuente: ${label}`;
-    
-    if (hasVideo && mediaEngine.cameraStream) {
-      remoteVideo.srcObject = mediaEngine.cameraStream;
-      remoteVideo.classList.add('active');
-      videoPlaceholder.style.display = 'none';
-    } else if (hasVideo && mediaEngine.displayStream) {
-      remoteVideo.srcObject = mediaEngine.displayStream;
-      remoteVideo.classList.add('active');
-      videoPlaceholder.style.display = 'none';
-    } else {
-      videoPlaceholder.style.display = 'none';
+  sttEngine.onStatusChange = (status) => {
+    if (status === 'listening') {
+      updateStatus(true, 'TRANSCRIBIENDO EN VIVO');
     }
-
-    btnToggleAudio.disabled = false;
-    if (hasVideo) btnToggleVideo.disabled = false;
-
-    btnStartRecord.disabled = false;
-    btnExportReport.disabled = false;
-
-    updateStatus(true, 'CONECTADO');
-    sttEngine.startListening();
-    startTimer();
   };
 
-  if (optCameraVideo) {
-    optCameraVideo.addEventListener('click', async () => {
-      try {
-        const result = await mediaEngine.startCameraAudioCapture();
-        enableRecordingState('Cámara de Video & Audio', !!result.videoTrack);
-      } catch (err) {
-        alert('Accediendo en modo micrófono...');
-        const result = await mediaEngine.startMicOnlyCapture();
-        enableRecordingState('Micrófono del Dispositivo', false);
-      }
-    });
-  }
-
-  if (optScreenAudio) {
-    optScreenAudio.addEventListener('click', async () => {
-      try {
-        const result = await mediaEngine.startScreenAudioCapture();
-        enableRecordingState('Zoom / Pantalla del Dispositivo', !!result.videoTrack);
-      } catch (err) {
-        alert('Iniciando captura de audio...');
-        const result = await mediaEngine.startMicOnlyCapture();
-        enableRecordingState('Micrófono del Dispositivo', false);
-      }
-    });
-  }
-
-  if (optMicOnly) {
-    optMicOnly.addEventListener('click', async () => {
-      try {
-        await mediaEngine.startMicOnlyCapture();
-        enableRecordingState('Micrófono del Dispositivo', false);
-      } catch (err) {
-        alert('No se pudo acceder al micrófono.');
-      }
-    });
-  }
-
-  btnStartRecord.addEventListener('click', () => {
-    const success = mediaEngine.startRecording();
-    if (success) {
-      btnStartRecord.style.display = 'none';
-      btnStopRecord.style.display = 'inline-flex';
-      updateStatus(true, 'GRABANDO EN VIVO');
-    } else {
-      alert('Inicia primero la captura de audio o video.');
+  // ===== SINGLE CAPTURE BUTTON =====
+  const startCapture = async () => {
+    if (isActive) {
+      // STOP everything
+      await stopCapture();
+      return;
     }
-  });
 
-  btnStopRecord.addEventListener('click', async () => {
-    const recordResult = await mediaEngine.stopRecording();
-    btnStopRecord.style.display = 'none';
-    btnStartRecord.style.display = 'inline-flex';
-    updateStatus(true, 'CONECTADO');
+    try {
+      // Update UI to "connecting" state
+      btnCapture.disabled = true;
+      btnCaptureText.textContent = 'Conectando...';
+      updateStatus(true, 'CONECTANDO...');
 
-    if (recordResult && recordResult.url) {
-      const a = document.createElement('a');
-      a.href = recordResult.url;
-      a.download = `ReuLive-Grabacion-${new Date().toISOString().slice(0,10)}.${recordResult.extension || 'webm'}`;
-      a.click();
-    }
-  });
+      // Start unified capture (auto-detects device)
+      const result = await mediaEngine.startUnifiedCapture();
 
-  // Mobile Bottom Nav
-  mobileNavItems.forEach(item => {
-    item.addEventListener('click', () => {
-      const target = item.getAttribute('data-target');
-
-      mobileNavItems.forEach(i => i.classList.remove('active'));
-      item.classList.add('active');
-
-      if (target === 'mediaSection') {
-        mediaSection.style.display = 'flex';
-        copilotSection.style.display = 'none';
+      // Show video if available
+      if (result.hasVideo) {
+        const videoStream = mediaEngine.getVideoStream();
+        if (videoStream) {
+          captureVideo.srcObject = videoStream;
+          captureVideo.classList.add('active');
+        }
+        capturePlaceholder.style.display = 'none';
       } else {
-        mediaSection.style.display = 'none';
-        copilotSection.style.display = 'flex';
-
-        tabBtns.forEach(b => b.classList.remove('active'));
-        tabContents.forEach(c => c.classList.remove('active'));
-
-        const activeTabBtn = document.querySelector(`.tab-btn[data-tab="${target}"]`);
-        if (activeTabBtn) activeTabBtn.classList.add('active');
-        const activeTabContent = document.getElementById(target);
-        if (activeTabContent) activeTabContent.classList.add('active');
+        capturePlaceholder.style.display = 'none';
+        // Show a "audio only" indicator
+        captureVideo.classList.remove('active');
       }
-    });
-  });
 
-  // Desktop Tab Nav
-  tabBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const targetTab = btn.getAttribute('data-tab');
+      // Update source label
+      sourceLabel.textContent = `Fuente: ${result.sourceLabel}`;
 
-      tabBtns.forEach(b => b.classList.remove('active'));
-      tabContents.forEach(c => c.classList.remove('active'));
+      // Start recording immediately
+      mediaEngine.startRecording();
 
-      btn.classList.add('active');
-      document.getElementById(targetTab).classList.add('active');
-    });
-  });
+      // Start speech recognition
+      sttEngine.startListening();
 
-  btnRefreshCopilot.addEventListener('click', async () => {
-    const aiResults = await aiEngine.processTranscript(sttEngine.transcriptHistory);
+      // Start timer
+      startTimer();
+
+      // Update UI
+      isActive = true;
+      btnCapture.disabled = false;
+      btnCapture.classList.remove('btn-primary');
+      btnCapture.classList.add('btn-danger');
+      btnCaptureText.textContent = 'Detener y Guardar';
+      btnCapture.querySelector('i').className = 'fa-solid fa-square';
+      btnExportReport.disabled = false;
+
+      updateStatus(true, 'GRABANDO EN VIVO');
+
+    } catch (err) {
+      console.error('Capture error:', err);
+      btnCapture.disabled = false;
+      btnCaptureText.textContent = 'Iniciar Captura';
+      updateStatus(false, 'Error');
+      alert('Error al iniciar captura: ' + err.message);
+    }
+  };
+
+  const stopCapture = async () => {
+    // Update UI to "stopping" state
+    btnCapture.disabled = true;
+    btnCaptureText.textContent = 'Guardando...';
+    updateStatus(true, 'GUARDANDO ARCHIVOS...');
+
+    // Stop speech recognition
+    sttEngine.stopListening();
+
+    // Stop recording and auto-download files
+    await mediaEngine.stopAndExport();
+
+    // Stop all media
+    mediaEngine.stopAll();
+
+    // Stop timer
+    stopTimer();
+
+    // Reset video
+    captureVideo.srcObject = null;
+    captureVideo.classList.remove('active');
+    capturePlaceholder.style.display = '';
+
+    // Reset UI
+    isActive = false;
+    btnCapture.disabled = false;
+    btnCapture.classList.remove('btn-danger');
+    btnCapture.classList.add('btn-primary');
+    btnCaptureText.textContent = 'Iniciar Captura';
+    btnCapture.querySelector('i').className = 'fa-solid fa-circle-dot';
+    sourceLabel.textContent = 'Fuente: Sin Conectar';
+
+    // Hide subtitles
+    subtitlesOverlay.classList.remove('visible');
+    subtitlesText.textContent = '';
+
+    updateStatus(false, 'Listo');
+  };
+
+  // Bind capture button
+  btnCapture.addEventListener('click', startCapture);
+  if (btnPlaceholderStart) btnPlaceholderStart.addEventListener('click', startCapture);
+
+  // ===== Copilot Controls =====
+  btnRefreshCopilot.addEventListener('click', () => {
+    const aiResults = aiEngine.processTranscript(sttEngine.transcriptHistory);
     updateAIUI(aiResults);
   });
 
-  const handleCustomPrompt = async () => {
+  // Custom prompt
+  const handleCustomPrompt = () => {
     const query = customPromptInput.value.trim();
     if (!query) return;
 
-    btnSendCustomPrompt.disabled = true;
-    const responseText = await aiEngine.queryCustomCopilot(query, sttEngine.transcriptHistory);
-    btnSendCustomPrompt.disabled = false;
-    
+    const responseText = aiEngine.queryCustomCopilot(query, sttEngine.transcriptHistory);
+
     const customCard = document.createElement('div');
     customCard.className = 'suggestion-card card-direct';
     customCard.innerHTML = `
@@ -268,7 +241,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     suggestionsContainer.prepend(customCard);
     bindCardButtons(customCard);
-
     customPromptInput.value = '';
   };
 
@@ -277,51 +249,60 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Enter') handleCustomPrompt();
   });
 
+  // Export Report
   btnExportReport.addEventListener('click', () => {
-    const topic = aiEngine.currentTopic;
     const history = sttEngine.transcriptHistory;
 
-    let markdown = `# Informe de Reunión ReuLive AI\n\n`;
-    markdown += `**Fecha:** ${new Date().toLocaleString()}\n`;
-    markdown += `**Tema Principal:** ${topic}\n`;
-    markdown += `**Duración:** ${timerText.textContent}\n\n`;
-    markdown += `--- \n\n## 📝 Transcripción Completa\n\n`;
+    let md = `# Informe de Reunión ReuLive AI\n\n`;
+    md += `**Fecha:** ${new Date().toLocaleString()}\n`;
+    md += `**Tema Principal:** ${aiEngine.currentTopic}\n`;
+    md += `**Duración:** ${timerText.textContent}\n`;
+    md += `**Intervenciones:** ${history.length}\n\n`;
+    md += `---\n\n## 📝 Transcripción Completa\n\n`;
 
     history.forEach(item => {
-      markdown += `* **[${item.timestamp}] ${item.speaker}:** ${item.text}\n`;
+      md += `* **[${item.timestamp}] ${item.speaker}:** ${item.text}\n`;
     });
 
-    markdown += `\n--- \n\n## 🤝 Acuerdos Tomados\n`;
-    aiEngine.agreements.forEach(a => markdown += `- ${a}\n`);
+    md += `\n---\n\n## 🤝 Acuerdos\n`;
+    aiEngine.agreements.forEach(a => md += `- ${a}\n`);
+    if (aiEngine.agreements.length === 0) md += `- Sin acuerdos registrados\n`;
 
-    markdown += `\n## 📋 Tareas / Action Items\n`;
-    aiEngine.actionItems.forEach(t => markdown += `- ${t}\n`);
+    md += `\n## 📋 Tareas Pendientes\n`;
+    aiEngine.actionItems.forEach(t => md += `- ${t}\n`);
+    if (aiEngine.actionItems.length === 0) md += `- Sin tareas registradas\n`;
 
-    const blob = new Blob([markdown], { type: 'text/markdown' });
+    const blob = new Blob([md], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Informe-Reunion-${new Date().toISOString().slice(0,10)}.md`;
+    a.download = `Informe-Reunion-${new Date().toISOString().slice(0, 10)}.md`;
     a.click();
+    URL.revokeObjectURL(url);
   });
 
-  btnClearTranscript.addEventListener('click', () => {
-    sttEngine.transcriptHistory = [];
-    transcriptStream.innerHTML = `
-      <div class="stream-item system-msg">
-        <span class="time">00:00</span>
-        <span class="text"><i class="fa-solid fa-info-circle"></i> Transcripción reiniciada...</span>
-      </div>
-    `;
-  });
+  // Clear transcript
+  if (btnClearTranscript) {
+    btnClearTranscript.addEventListener('click', () => {
+      sttEngine.transcriptHistory = [];
+      transcriptStream.innerHTML = `
+        <div class="stream-item system-msg">
+          <span class="time">00:00</span>
+          <span class="text"><i class="fa-solid fa-info-circle"></i> Transcripción reiniciada...</span>
+        </div>
+      `;
+      if (transcriptCount) transcriptCount.textContent = '0';
+    });
+  }
 
+  // ===== UI Update Functions =====
   function updateStatus(isLive, label) {
     if (isLive) {
       liveStatusBadge.className = 'status-badge status-live';
       statusText.textContent = label || 'CONECTADO';
     } else {
       liveStatusBadge.className = 'status-badge status-offline';
-      statusText.textContent = 'Listo';
+      statusText.textContent = label || 'Listo';
     }
   }
 
@@ -335,6 +316,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const secs = String(timerSeconds % 60).padStart(2, '0');
       timerText.textContent = `${hrs}:${mins}:${secs}`;
     }, 1000);
+  }
+
+  function stopTimer() {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
   }
 
   function appendTranscriptItem(chunk) {
@@ -353,18 +341,23 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
 
     transcriptStream.appendChild(itemDiv);
+    transcriptStream.scrollTop = transcriptStream.scrollHeight;
 
-    if (isAutoScroll) {
-      transcriptStream.scrollTop = transcriptStream.scrollHeight;
+    // Update count badge
+    if (transcriptCount) {
+      transcriptCount.textContent = sttEngine.transcriptHistory.length;
     }
   }
 
   function updateAIUI(aiResults) {
+    // Update topic
     currentTopicText.textContent = aiResults.topic;
     if (analyticsCurrentTopic) analyticsCurrentTopic.textContent = aiResults.topic;
 
-    sentimentText.textContent = aiResults.sentiment;
+    // Update sentiment
+    if (sentimentText) sentimentText.textContent = aiResults.sentiment;
 
+    // Update suggestion cards
     suggestionsContainer.innerHTML = '';
     aiResults.suggestions.forEach(sug => {
       const card = document.createElement('div');
@@ -381,19 +374,31 @@ document.addEventListener('DOMContentLoaded', () => {
       bindCardButtons(card);
     });
 
-    updateTopicTimeline(aiResults.topic);
-    updateLists(aiResults.agreements, aiResults.actionItems);
+    // Update agreements & action items
+    if (aiResults.agreements && aiResults.agreements.length > 0 && agreementsList) {
+      agreementsList.innerHTML = aiResults.agreements.map(a =>
+        `<li><i class="fa-solid fa-check text-emerald"></i> ${a}</li>`
+      ).join('');
+    }
+    if (aiResults.actionItems && aiResults.actionItems.length > 0 && actionItemsList) {
+      actionItemsList.innerHTML = aiResults.actionItems.map(t =>
+        `<li><i class="fa-regular fa-square text-amber"></i> ${t}</li>`
+      ).join('');
+    }
   }
 
   function bindCardButtons(card) {
-    const text = card.querySelector('.suggestion-text').textContent;
+    const textEl = card.querySelector('.suggestion-text');
+    if (!textEl) return;
+    const text = textEl.textContent;
+
     const btnCopy = card.querySelector('.btn-copy');
     const btnSpeak = card.querySelector('.btn-speak');
 
     if (btnCopy) {
       btnCopy.addEventListener('click', () => {
         const cleanText = text.replace(/^"|"$/g, '');
-        navigator.clipboard.writeText(cleanText);
+        navigator.clipboard.writeText(cleanText).catch(() => {});
         btnCopy.innerHTML = `<i class="fa-solid fa-check"></i> Copiado`;
         setTimeout(() => {
           btnCopy.innerHTML = `<i class="fa-regular fa-copy"></i> Copiar`;
@@ -404,31 +409,30 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnSpeak && 'speechSynthesis' in window) {
       btnSpeak.addEventListener('click', () => {
         window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
+        const utterance = new SpeechSynthesisUtterance(text.replace(/^"|"$/g, ''));
         utterance.lang = 'es-ES';
         window.speechSynthesis.speak(utterance);
       });
     }
   }
 
-  function updateTopicTimeline(topic) {
-    topicTimelineList.innerHTML = `
-      <li class="active-topic">
-        <span class="time-badge">Ahora</span>
-        <div class="topic-info">
-          <strong>${topic}</strong>
-          <p>Procesado en tiempo real con inteligencia artificial.</p>
-        </div>
-      </li>
-    `;
-  }
+  // Handle display stream ending (user stops screen share from browser UI)
+  // This ensures we clean up properly
+  const checkStreamEnded = () => {
+    if (isActive && mediaEngine.displayStream) {
+      const videoTracks = mediaEngine.displayStream.getVideoTracks();
+      videoTracks.forEach(track => {
+        track.onended = () => {
+          console.log('Screen share stopped by user');
+          stopCapture();
+        };
+      });
+    }
+  };
 
-  function updateLists(agreements, actionItems) {
-    if (agreements && agreements.length > 0) {
-      agreementsList.innerHTML = agreements.map(a => `<li><i class="fa-solid fa-check text-emerald"></i> ${a}</li>`).join('');
-    }
-    if (actionItems && actionItems.length > 0) {
-      actionItemsList.innerHTML = actionItems.map(t => `<li><i class="fa-regular fa-square text-amber"></i> ${t}</li>`).join('');
-    }
-  }
+  // Periodic check for stream health
+  const originalStart = startCapture;
+  // We'll add the stream ended listener after capture starts
+  const originalBtnHandler = btnCapture.onclick;
+
 });

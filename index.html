@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>ReuLive AI | Copiloto & Grabador de Reuniones en Tiempo Real</title>
-  <meta name="description" content="Graba reuniones de Zoom y audio del sistema en tiempo real, extrae el tema principal en vivo y genera posibles respuestas sugeridas automáticamente.">
+  <meta name="description" content="Graba reuniones de Zoom en tiempo real, transcribe automáticamente, extrae el tema principal y genera respuestas sugeridas con IA.">
   <!-- Fonts & Icons -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,8 +13,8 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body class="dark-theme">
-  
-  <!-- Header Bar -->
+
+  <!-- ===== Header Bar ===== -->
   <header class="app-header">
     <div class="logo-group">
       <div class="logo-icon">
@@ -26,13 +26,12 @@
       </div>
     </div>
 
-    <!-- Live Status & Topic Badge -->
+    <!-- Live Status & Topic -->
     <div class="status-center">
       <div id="liveStatusBadge" class="status-badge status-offline">
         <span class="status-dot"></span>
         <span id="statusText">Listo</span>
       </div>
-
       <div class="main-topic-pill" id="mainTopicPill">
         <i class="fa-solid fa-compass-drafting text-cyan"></i>
         <span class="topic-label">Tema:</span>
@@ -40,15 +39,17 @@
       </div>
     </div>
 
-    <!-- Top Action Bar -->
+    <!-- Header Actions -->
     <div class="header-actions">
       <div class="timer-display" id="meetingTimer">
         <i class="fa-regular fa-clock"></i>
         <span id="timerText">00:00</span>
       </div>
 
-      <button id="btnConnectZoom" class="btn btn-primary glow-btn">
-        <i class="fa-solid fa-plug-circle-bolt"></i> Conectar Fuente
+      <!-- SINGLE CAPTURE BUTTON -->
+      <button id="btnCapture" class="btn btn-primary glow-btn">
+        <i class="fa-solid fa-circle-dot"></i>
+        <span id="btnCaptureText">Iniciar Captura</span>
       </button>
 
       <button id="btnExportReport" class="btn btn-outline" disabled title="Exportar Informe">
@@ -57,316 +58,186 @@
     </div>
   </header>
 
-  <!-- Mobile Bottom Navigation Bar -->
-  <nav class="mobile-nav-bar" id="mobileNavBar">
-    <button class="nav-item active" data-target="tabCopilot">
-      <i class="fa-solid fa-robot"></i>
-      <span>Copiloto</span>
-    </button>
-    <button class="nav-item" data-target="mediaSection">
-      <i class="fa-solid fa-display"></i>
-      <span>Audio/Video</span>
-    </button>
-    <button class="nav-item" data-target="tabTranscript">
-      <i class="fa-solid fa-closed-captioning"></i>
-      <span>Transcripción</span>
-    </button>
-    <button class="nav-item" data-target="tabAnalytics">
-      <i class="fa-solid fa-brain"></i>
-      <span>Temas</span>
-    </button>
-  </nav>
+  <!-- ===== Main Unified Layout ===== -->
+  <main class="app-unified">
 
-  <!-- Main Application Dashboard -->
-  <main class="app-container">
-    
-    <!-- Left Section: Screen Capture / Video Viewport + Audio Visualizer -->
-    <section class="media-section" id="mediaSection">
-      <div class="viewport-card glass-panel">
-        
+    <!-- === Capture Section (Video/Screen + Subtitles + Visualizer) === -->
+    <section class="capture-section" id="captureSection">
+      <div class="capture-viewport glass-panel">
+
         <div class="viewport-header">
           <div class="viewport-title">
             <i class="fa-solid fa-display text-accent"></i>
             <span id="sourceLabel">Fuente: Sin Conectar</span>
           </div>
           <div class="viewport-controls">
-            <button id="btnToggleVideo" class="icon-btn" title="Alternar Video" disabled>
-              <i class="fa-solid fa-video"></i>
-            </button>
-            <button id="btnToggleAudio" class="icon-btn" title="Alternar Audio" disabled>
-              <i class="fa-solid fa-microphone"></i>
-            </button>
+            <div class="live-metrics-inline">
+              <span class="metric-chip-sm">
+                <span class="metric-dot-sm live-pulse"></span>
+                Audio: <strong id="micVolumeLevel">0%</strong>
+              </span>
+              <span class="metric-chip-sm">
+                <i class="fa-solid fa-chart-line text-emerald"></i>
+                <strong id="sentimentText">Neutral</strong>
+              </span>
+            </div>
           </div>
         </div>
 
-        <!-- Video Player Display -->
-        <div class="video-container">
-          <video id="remoteVideo" autoplay playsinline muted class="video-feed"></video>
-          
-          <div class="video-placeholder" id="videoPlaceholder">
+        <!-- Video Display -->
+        <div class="video-container" id="videoContainer">
+          <video id="captureVideo" autoplay playsinline muted class="video-feed"></video>
+
+          <!-- Placeholder when not capturing -->
+          <div class="capture-placeholder" id="capturePlaceholder">
             <div class="placeholder-icon">
               <i class="fa-solid fa-headset"></i>
             </div>
-            <h3>Conecta el Audio o Video de tu Reunión</h3>
-            <p>Captura tu llamada en <strong>Zoom, Meet, Teams</strong>, cámara de video o micrófono para transcribir e identificar participantes en tiempo real.</p>
-            <button class="btn btn-primary glow-btn" id="btnMainConnect">
-              <i class="fa-solid fa-plug-circle-bolt"></i> Iniciar Captura de Audio & Video
+            <h3>Captura tu Reunión con 1 Click</h3>
+            <p>Presiona <strong>"Iniciar Captura"</strong> para grabar pantalla, audio, y transcribir automáticamente tu llamada de Zoom, Meet o Teams.</p>
+            <button class="btn btn-primary glow-btn" id="btnPlaceholderStart">
+              <i class="fa-solid fa-circle-dot"></i> Iniciar Captura Ahora
             </button>
           </div>
 
-          <!-- Dynamic Audio Frequency Overlay -->
+          <!-- Live Subtitles Overlay -->
+          <div class="subtitles-overlay" id="subtitlesOverlay">
+            <div class="subtitles-text" id="subtitlesText"></div>
+          </div>
+
+          <!-- Audio Frequency Visualizer -->
           <div class="canvas-overlay">
             <canvas id="audioVisualizerCanvas"></canvas>
           </div>
+        </div>
 
-          <!-- Floating Live Metrics Overlay -->
-          <div class="live-metrics-overlay">
-            <div class="metric-chip">
-              <span class="metric-dot live-pulse"></span>
-              <span>Audio: <strong id="micVolumeLevel">0%</strong></span>
+        <!-- Audio Meters Footer -->
+        <div class="viewport-footer">
+          <div class="audio-mixer-info">
+            <div class="channel">
+              <i class="fa-solid fa-desktop text-purple"></i> Sistema:
+              <div class="meter-bar"><div class="meter-fill" id="systemAudioMeter"></div></div>
             </div>
-            <div class="metric-chip">
-              <i class="fa-solid fa-chart-line text-emerald"></i>
-              <span>Sentimiento: <strong id="sentimentText">Neutral</strong></span>
+            <div class="channel">
+              <i class="fa-solid fa-microphone text-cyan"></i> Mic:
+              <div class="meter-bar"><div class="meter-fill" id="userMicMeter"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- === Copilot Section (Responses + Transcript + Analytics) === -->
+    <section class="copilot-section" id="copilotSection">
+      <div class="copilot-card glass-panel">
+
+        <!-- Copilot Header -->
+        <div class="copilot-header">
+          <div class="copilot-title">
+            <h3><i class="fa-solid fa-sparkles text-amber"></i> Respuestas Sugeridas</h3>
+            <p class="copilot-subtitle">Responde de inmediato con ayuda de la IA</p>
+          </div>
+          <button id="btnRefreshCopilot" class="btn-icon-soft" title="Generar nuevas respuestas">
+            <i class="fa-solid fa-rotate"></i>
+          </button>
+        </div>
+
+        <!-- AI Suggestion Cards -->
+        <div class="suggestions-list" id="suggestionsContainer">
+          <div class="suggestion-card card-direct">
+            <div class="card-tag"><i class="fa-solid fa-circle-check"></i> ⚡ Respuesta Directa</div>
+            <p class="suggestion-text">"Entendido. Podemos revisar los datos clave y avanzar con los siguientes pasos de forma inmediata."</p>
+            <div class="card-actions">
+              <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
+              <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
+            </div>
+          </div>
+          <div class="suggestion-card card-proposal">
+            <div class="card-tag"><i class="fa-solid fa-lightbulb"></i> 💡 Propuesta</div>
+            <p class="suggestion-text">"Una alternativa eficiente es estructurar la solución de forma modular para acelerar el desarrollo."</p>
+            <div class="card-actions">
+              <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
+              <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
+            </div>
+          </div>
+          <div class="suggestion-card card-question">
+            <div class="card-tag"><i class="fa-solid fa-circle-question"></i> ❓ Pregunta</div>
+            <p class="suggestion-text">"¿Cuál es el tiempo estimado de entrega y quién liderará la aprobación final?"</p>
+            <div class="card-actions">
+              <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
+              <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
+            </div>
+          </div>
+          <div class="suggestion-card card-summary">
+            <div class="card-tag"><i class="fa-solid fa-list-check"></i> 📌 Síntesis</div>
+            <p class="suggestion-text">"Para confirmar: acordamos definir el alcance hoy y enviar la actualización por escrito."</p>
+            <div class="card-actions">
+              <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
+              <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
             </div>
           </div>
         </div>
 
-        <!-- Quick Controls Footer -->
-        <div class="viewport-footer">
-          <div class="control-group">
-            <button id="btnStartRecord" class="btn btn-success glow-btn" disabled>
-              <i class="fa-solid fa-circle-dot"></i> Iniciar Grabación
-            </button>
-            <button id="btnStopRecord" class="btn btn-danger" style="display: none;">
-              <i class="fa-solid fa-square"></i> Detener & Guardar Grabación
-            </button>
+        <!-- Expandable: Full Transcript -->
+        <details class="panel-details" id="transcriptDetails">
+          <summary>
+            <i class="fa-solid fa-closed-captioning"></i> Transcripción Completa
+            <span class="detail-badge" id="transcriptCount">0</span>
+          </summary>
+          <div class="details-content">
+            <div class="transcript-actions-bar">
+              <input type="text" id="speakerNameInput" placeholder="Nombre del interlocutor..." class="sm-input" value="Interlocutor">
+              <button id="btnClearTranscript" class="btn-sm"><i class="fa-solid fa-trash"></i></button>
+            </div>
+            <div class="transcript-stream" id="transcriptStream">
+              <div class="stream-item system-msg">
+                <span class="time">00:00</span>
+                <span class="text"><i class="fa-solid fa-info-circle"></i> Inicia la captura para transcribir en tiempo real...</span>
+              </div>
+            </div>
           </div>
+        </details>
 
-          <div class="audio-mixer-info">
-            <div class="channel">
-              <i class="fa-solid fa-desktop text-purple"></i> Zoom/Sistema:
-              <div class="meter-bar"><div class="meter-fill" id="systemAudioMeter"></div></div>
+        <!-- Expandable: Topics & Agreements -->
+        <details class="panel-details" id="analyticsDetails">
+          <summary>
+            <i class="fa-solid fa-brain"></i> Temas & Acuerdos
+          </summary>
+          <div class="details-content">
+            <div class="analytics-card-mini">
+              <h4><i class="fa-solid fa-tags text-cyan"></i> Tema Actual</h4>
+              <p id="analyticsCurrentTopic">Estrategia General y Coordinación</p>
             </div>
-            <div class="channel">
-              <i class="fa-solid fa-microphone text-cyan"></i> Tu Micrófono:
-              <div class="meter-bar"><div class="meter-fill" id="userMicMeter"></div></div>
+            <div class="analytics-card-mini">
+              <h4><i class="fa-solid fa-handshake text-emerald"></i> Acuerdos</h4>
+              <ul class="bullet-list" id="agreementsList">
+                <li><i class="fa-solid fa-check text-emerald"></i> Esperando acuerdos...</li>
+              </ul>
             </div>
+            <div class="analytics-card-mini">
+              <h4><i class="fa-solid fa-list-check text-amber"></i> Tareas</h4>
+              <ul class="bullet-list" id="actionItemsList">
+                <li><i class="fa-regular fa-square text-amber"></i> Esperando tareas...</li>
+              </ul>
+            </div>
+          </div>
+        </details>
+
+        <!-- Custom AI Prompt Bar -->
+        <div class="copilot-input-bar">
+          <div class="input-wrapper">
+            <i class="fa-solid fa-wand-magic-sparkles text-purple"></i>
+            <input type="text" id="customPromptInput" placeholder="Pregunta en secreto al copiloto...">
+            <button id="btnSendCustomPrompt" class="btn-send" title="Enviar al copiloto">
+              <i class="fa-solid fa-paper-plane"></i>
+            </button>
           </div>
         </div>
 
       </div>
     </section>
 
-    <!-- Right Section: Real-time Copilot & Dynamic Insights Panel -->
-    <aside class="copilot-section" id="copilotSection">
-      <div class="copilot-card glass-panel">
-        
-        <!-- Navigation Tabs (Desktop) -->
-        <nav class="copilot-tabs">
-          <button class="tab-btn active" data-tab="tabCopilot">
-            <i class="fa-solid fa-robot"></i> Copiloto en Vivo
-            <span class="tab-badge" id="copilotBadgeCount">4</span>
-          </button>
-          <button class="tab-btn" data-tab="tabTranscript">
-            <i class="fa-solid fa-closed-captioning"></i> Transcripción
-          </button>
-          <button class="tab-btn" data-tab="tabAnalytics">
-            <i class="fa-solid fa-brain"></i> Temas & Acuerdos
-          </button>
-        </nav>
-
-        <!-- TAB 1: Real-time AI Suggested Responses -->
-        <div id="tabCopilot" class="tab-content active">
-          
-          <div class="copilot-header">
-            <div class="copilot-title">
-              <h3><i class="fa-solid fa-sparkles text-amber"></i> Respuestas Sugeridas para Responder</h3>
-              <p>Opciones generadas instantáneamente para que respondas de inmediato:</p>
-            </div>
-            <button id="btnRefreshCopilot" class="btn-icon-soft" title="Generar nuevas respuestas">
-              <i class="fa-solid fa-rotate"></i>
-            </button>
-          </div>
-
-          <!-- Dynamic Suggestions Grid -->
-          <div class="suggestions-list" id="suggestionsContainer">
-            
-            <div class="suggestion-card card-direct">
-              <div class="card-tag"><i class="fa-solid fa-circle-check"></i> ⚡ Respuesta Directa e Inmediata</div>
-              <p class="suggestion-text">"Entendido. Podemos revisar los datos clave y avanzar con los siguientes pasos de forma inmediata."</p>
-              <div class="card-actions">
-                <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
-                <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
-              </div>
-            </div>
-
-            <div class="suggestion-card card-proposal">
-              <div class="card-tag"><i class="fa-solid fa-lightbulb"></i> 💡 Propuesta Estratégica</div>
-              <p class="suggestion-text">"Una alternativa eficiente es estructurar la solución de forma modular para acelerar el desarrollo."</p>
-              <div class="card-actions">
-                <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
-                <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
-              </div>
-            </div>
-
-            <div class="suggestion-card card-question">
-              <div class="card-tag"><i class="fa-solid fa-circle-question"></i> ❓ Pregunta de Clarificación</div>
-              <p class="suggestion-text">"¿Cuál es el tiempo estimado de entrega y quién liderará la aprobación final de esta etapa?"</p>
-              <div class="card-actions">
-                <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
-                <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
-              </div>
-            </div>
-
-            <div class="suggestion-card card-summary">
-              <div class="card-tag"><i class="fa-solid fa-list-check"></i> 📌 Síntesis / Cierre</div>
-              <p class="suggestion-text">"Para confirmar: acordamos definir el alcance hoy y enviar la actualización por escrito."</p>
-              <div class="card-actions">
-                <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
-                <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
-              </div>
-            </div>
-
-          </div>
-
-          <!-- Secret Private AI Query Bar -->
-          <div class="copilot-input-bar">
-            <div class="input-wrapper">
-              <i class="fa-solid fa-wand-magic-sparkles text-purple"></i>
-              <input type="text" id="customPromptInput" placeholder="Pregunta en secreto al copiloto durante la llamada...">
-              <button id="btnSendCustomPrompt" class="btn-send" title="Enviar al copiloto">
-                <i class="fa-solid fa-paper-plane"></i>
-              </button>
-            </div>
-          </div>
-
-        </div>
-
-        <!-- TAB 2: Real-time Transcript Feed -->
-        <div id="tabTranscript" class="tab-content">
-          <div class="transcript-header">
-            <h3><i class="fa-solid fa-stream"></i> Transcripción en Directo</h3>
-            <div class="transcript-actions">
-              <button id="btnClearTranscript" class="btn-sm"><i class="fa-solid fa-trash"></i> Limpiar</button>
-            </div>
-          </div>
-
-          <!-- Speaker Name Config Bar -->
-          <div class="speaker-config-bar">
-            <span class="config-label"><i class="fa-solid fa-id-badge text-cyan"></i> Nombre de Participante:</span>
-            <input type="text" id="speakerNameInput" placeholder="Ej: Cliente / Carlos" class="sm-input" value="Hablante 1 (Interlocutor)">
-          </div>
-
-          <!-- Quick Speech Injection Test Toolbar -->
-          <div class="quick-speech-test">
-            <span class="test-label"><i class="fa-solid fa-bolt text-amber"></i> Simular frase de la reunión:</span>
-            <div class="test-chips">
-              <button class="chip-btn" data-speech="¿Cuál es el presupuesto final y la fecha de entrega?">"¿Cuál es el presupuesto?"</button>
-              <button class="chip-btn" data-speech="¿Cómo conectaremos el repositorio de GitHub con Vercel?">"¿Cómo conectamos Vercel?"</button>
-            </div>
-          </div>
-
-          <div class="transcript-stream" id="transcriptStream">
-            <div class="stream-item system-msg">
-              <span class="time">00:00</span>
-              <span class="text"><i class="fa-solid fa-info-circle"></i> Inicia la conexión de audio para transcribir la llamada en tiempo real...</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- TAB 3: Topic Breakdown & Action Items -->
-        <div id="tabAnalytics" class="tab-content">
-          <div class="analytics-header">
-            <h3><i class="fa-solid fa-layer-group"></i> Estructura & Puntos Clave</h3>
-          </div>
-
-          <div class="analytics-body">
-            
-            <div class="analytics-card">
-              <h4><i class="fa-solid fa-tags text-cyan"></i> Temas Extraídos de la Reunión</h4>
-              <ul class="topic-timeline" id="topicTimelineList">
-                <li class="active-topic">
-                  <span class="time-badge">Ahora</span>
-                  <div class="topic-info">
-                    <strong id="analyticsCurrentTopic">Estrategia General y Coordinación</strong>
-                    <p>Monitoreo continuo con inteligencia artificial.</p>
-                  </div>
-                </li>
-              </ul>
-            </div>
-
-            <div class="analytics-card">
-              <h4><i class="fa-solid fa-handshake text-emerald"></i> Acuerdos Tomados</h4>
-              <ul class="bullet-list" id="agreementsList">
-                <li><i class="fa-solid fa-check text-emerald"></i> Captura de audio y transcripción continua activa.</li>
-              </ul>
-            </div>
-
-            <div class="analytics-card">
-              <h4><i class="fa-solid fa-list-check text-amber"></i> Tareas & Action Items</h4>
-              <ul class="bullet-list" id="actionItemsList">
-                <li><i class="fa-regular fa-square text-amber"></i> Clasificación de hablantes e identificación de respuestas activa.</li>
-              </ul>
-            </div>
-
-          </div>
-        </div>
-
-      </div>
-    </aside>
-
   </main>
-
-  <!-- MODAL 1: Connection Selector Wizard -->
-  <div class="modal-backdrop" id="modalConnection" style="display: none;">
-    <div class="modal-card glass-panel">
-      <div class="modal-header">
-        <h2><i class="fa-solid fa-plug-circle-bolt text-accent"></i> Conectar Fuente de la Reunión</h2>
-        <button class="btn-close" id="btnCloseModalConnect"><i class="fa-solid fa-xmark"></i></button>
-      </div>
-
-      <div class="modal-body">
-        <p class="modal-desc">Selecciona cómo deseas grabar la reunión:</p>
-
-        <div class="connection-options">
-          
-          <div class="option-card" id="optCameraVideo">
-            <div class="option-icon bg-pink">
-              <i class="fa-solid fa-video"></i>
-            </div>
-            <div class="option-content">
-              <h3>Cámara de Video + Audio del Dispositivo</h3>
-              <p>Graba el video de la cámara frontal/trasera y el audio ambiente de la llamada en tiempo real.</p>
-              <span class="tag-recommend">Recomendado para Smartphone / Grabación de Video</span>
-            </div>
-          </div>
-
-          <div class="option-card" id="optScreenAudio">
-            <div class="option-icon bg-purple">
-              <i class="fa-solid fa-desktop"></i>
-            </div>
-            <div class="option-content">
-              <h3>Zoom / Pantalla del Dispositivo con Audio</h3>
-              <p>Captura el audio directamente de la ventana de Zoom o pantalla completa y combínalo con tu micrófono.</p>
-              <span class="tag-recommend">Recomendado para Escritorio & Web Zoom</span>
-            </div>
-          </div>
-
-          <div class="option-card" id="optMicOnly">
-            <div class="option-icon bg-cyan">
-              <i class="fa-solid fa-microphone-lines"></i>
-            </div>
-            <div class="option-content">
-              <h3>Solo Micrófono del Dispositivo</h3>
-              <p>Ideal para teléfonos móviles (Smartphone), llamadas en altavoz o voz directa.</p>
-            </div>
-          </div>
-
-        </div>
-      </div>
-    </div>
-  </div>
 
   <!-- JS Modules -->
   <script src="js/mediaEngine.js"></script>

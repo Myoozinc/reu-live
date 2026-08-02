@@ -1,55 +1,54 @@
 /**
- * ReuLive - Ultra-Fast AI Copilot & Real-Time Topic Extractor
- * Generates instant user response options tailored to the speaker in < 200ms.
+ * ReuLive - AI Copilot Engine
+ * Real-time topic extraction and intelligent response generation.
+ * Processes transcript chunks and generates contextual answers in <100ms.
  */
-
 class AIEngine {
   constructor() {
-    this.currentTopic = "En espera de audio de la reunión...";
-    this.apiKey = localStorage.getItem('reulive_gemini_key') || '';
+    this.currentTopic = 'En espera de audio de la reunión...';
     this.agreements = [];
     this.actionItems = [];
-    this.sentiment = "Neutral";
-  }
-
-  setApiKey(key) {
-    this.apiKey = key.trim();
-    localStorage.setItem('reulive_gemini_key', this.apiKey);
+    this.sentiment = 'Neutral';
+    this.topicHistory = [];
   }
 
   /**
-   * Ultra-fast real-time processor called on every spoken phrase
+   * Main processor called on every final transcript chunk
    */
-  async processTranscript(transcriptHistory) {
+  processTranscript(transcriptHistory) {
     if (!transcriptHistory || transcriptHistory.length === 0) {
       return {
-        topic: "Inicio de la reunión",
+        topic: 'Inicio de la reunión',
         suggestions: this.getDefaultSuggestions(),
-        sentiment: "Neutral"
+        sentiment: 'Neutral',
+        agreements: [],
+        actionItems: []
       };
     }
 
+    const recent = transcriptHistory.slice(-6);
+    const recentText = recent.map(t => `${t.speaker}: ${t.text}`).join('\n');
+    const fullText = transcriptHistory.map(t => t.text).join(' ');
     const lastChunk = transcriptHistory[transcriptHistory.length - 1];
-    const recentText = transcriptHistory.slice(-4).map(t => `${t.speaker}: ${t.text}`).join('\n');
-    const fullText = transcriptHistory.map(t => `${t.speaker}: ${t.text}`).join('\n');
 
-    // Extract main meeting topic
-    this.currentTopic = this.extractMainTopic(recentText, fullText);
-    this.sentiment = this.analyzeSentiment(recentText);
-    this.extractItems(transcriptHistory);
-
-    // Call optional Gemini API in background if API key is provided
-    if (this.apiKey) {
-      this.callGeminiAPI(recentText, fullText).then(geminiResult => {
-        if (geminiResult && geminiResult.suggestions) {
-          // Asynchronous update if Gemini returns
-          this.lastGeminiSuggestions = geminiResult.suggestions;
-        }
-      }).catch(e => {});
+    // Extract topic
+    const newTopic = this.extractTopic(recentText, fullText);
+    if (newTopic !== this.currentTopic) {
+      this.topicHistory.push({
+        topic: newTopic,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      });
+      this.currentTopic = newTopic;
     }
 
-    // Instant (< 200ms) Copilot Suggested Answers tailored to the last speaker
-    const suggestions = this.generateLiveCopilotAnswers(lastChunk, recentText, this.currentTopic);
+    // Analyze sentiment
+    this.sentiment = this.analyzeSentiment(recentText);
+
+    // Extract agreements and action items
+    this.extractItems(transcriptHistory);
+
+    // Generate instant copilot suggestions
+    const suggestions = this.generateSuggestions(lastChunk, recentText, this.currentTopic);
 
     return {
       topic: this.currentTopic,
@@ -61,146 +60,297 @@ class AIEngine {
   }
 
   /**
-   * Generates 4 immediate, high-impact responses for YOU to speak back in the meeting
+   * Topic extraction from conversation context
    */
-  generateLiveCopilotAnswers(lastChunk, recentText, topic) {
+  extractTopic(recentText, fullText) {
+    const combined = (recentText + ' ' + fullText).toLowerCase();
+
+    const topicMap = [
+      { keys: ['presupuesto', 'costo', 'precio', 'dinero', 'inversión', 'factura', 'pago', 'cobro', 'tarifa'], topic: 'Presupuesto y Análisis Financiero' },
+      { keys: ['fecha', 'entrega', 'sprint', 'deadline', 'plazo', 'calendario', 'cronograma', 'semana'], topic: 'Planificación de Fechas y Entregables' },
+      { keys: ['vercel', 'github', 'despliegue', 'deploy', 'servidor', 'hosting', 'dominio', 'producción'], topic: 'Infraestructura Web y Despliegue' },
+      { keys: ['diseño', 'ui', 'ux', 'interfaz', 'prototipo', 'mockup', 'figma', 'estilo', 'colores'], topic: 'Diseño de Interfaz y Experiencia de Usuario' },
+      { keys: ['api', 'backend', 'base de datos', 'endpoint', 'microservicio', 'integración'], topic: 'Arquitectura Backend e Integraciones' },
+      { keys: ['cliente', 'usuario', 'feedback', 'satisfacción', 'encuesta', 'experiencia'], topic: 'Experiencia del Cliente y Feedback' },
+      { keys: ['marketing', 'campaña', 'publicidad', 'marca', 'branding', 'redes sociales', 'contenido'], topic: 'Estrategia de Marketing y Comunicación' },
+      { keys: ['equipo', 'contratación', 'talento', 'capacitación', 'roles', 'responsabilidades'], topic: 'Gestión de Equipo y Recursos Humanos' },
+      { keys: ['seguridad', 'cifrado', 'autenticación', 'privacidad', 'cumplimiento', 'gdpr'], topic: 'Seguridad y Protección de Datos' },
+      { keys: ['testing', 'prueba', 'qa', 'bug', 'error', 'calidad', 'regresión'], topic: 'Control de Calidad y Testing' },
+      { keys: ['venta', 'negocio', 'propuesta', 'contrato', 'acuerdo', 'deal', 'cierre'], topic: 'Negociación Comercial y Ventas' },
+      { keys: ['producto', 'feature', 'funcionalidad', 'roadmap', 'mvp', 'lanzamiento', 'versión'], topic: 'Desarrollo de Producto y Roadmap' },
+      { keys: ['problema', 'bloqueo', 'urgente', 'crítico', 'incidencia', 'resolver'], topic: 'Resolución de Problemas y Bloqueos' },
+      { keys: ['reunión', 'agenda', 'punto', 'tema', 'siguiente', 'anterior'], topic: 'Coordinación y Agenda de la Reunión' },
+      { keys: ['hola', 'buenos días', 'buenas tardes', 'empezar', 'comenzar', 'iniciar'], topic: 'Inicio y Bienvenida' },
+    ];
+
+    for (const entry of topicMap) {
+      if (entry.keys.some(k => combined.includes(k))) {
+        return entry.topic;
+      }
+    }
+
+    // Fallback: extract key words
+    const words = recentText.split(/\s+/).filter(w => w.length > 6);
+    if (words.length >= 2) {
+      return `Discusión: ${words.slice(-3).join(' ')}`;
+    }
+
+    return 'Coordinación General de la Reunión';
+  }
+
+  /**
+   * Sentiment analysis
+   */
+  analyzeSentiment(text) {
+    const lower = text.toLowerCase();
+    const positive = ['excelente', 'perfecto', 'acuerdo', 'bien', 'genial', 'increíble', 'fantástico', 'aprobado', 'correcto'];
+    const negative = ['problema', 'urgente', 'error', 'fallo', 'retraso', 'bloqueado', 'imposible', 'cancelar'];
+    const neutral = ['creo', 'pienso', 'quizás', 'posiblemente', 'analizar', 'revisar'];
+
+    const posCount = positive.filter(w => lower.includes(w)).length;
+    const negCount = negative.filter(w => lower.includes(w)).length;
+
+    if (posCount > negCount && posCount > 0) return 'Positivo / Colaborativo';
+    if (negCount > posCount && negCount > 0) return 'Atención Requerida';
+    return 'Analítico / Técnico';
+  }
+
+  /**
+   * Extract agreements and action items
+   */
+  extractItems(history) {
+    const agreementsSet = new Set(this.agreements);
+    const actionItemsSet = new Set(this.actionItems);
+
+    const agreementKeywords = ['acordamos', 'confirmado', 'definimos', 'quedamos en', 'aceptado', 'aprobado'];
+    const actionKeywords = ['necesitamos', 'hay que', 'tarea', 'entregar', 'pendiente', 'asignar', 'completar', 'revisar'];
+
+    history.slice(-10).forEach(item => {
+      const lower = item.text.toLowerCase();
+      if (agreementKeywords.some(k => lower.includes(k))) {
+        agreementsSet.add(`${item.speaker}: ${item.text}`);
+      }
+      if (actionKeywords.some(k => lower.includes(k))) {
+        actionItemsSet.add(`${item.speaker}: ${item.text}`);
+      }
+    });
+
+    this.agreements = Array.from(agreementsSet).slice(-8);
+    this.actionItems = Array.from(actionItemsSet).slice(-8);
+  }
+
+  /**
+   * Generate 4 smart response suggestions based on context
+   */
+  generateSuggestions(lastChunk, recentText, topic) {
     const text = (lastChunk ? lastChunk.text : recentText).toLowerCase();
     const speaker = lastChunk ? lastChunk.speaker : 'Interlocutor';
 
-    let direct = `"Totalmente de acuerdo con lo que acabas de mencionar, ${speaker}. Podemos avanzar con ese enfoque inmediatamente."`;
-    let proposal = `"Una opción práctica para agilizar este punto es dividir el entregable en dos fases cortas."`;
-    let question = `"¿Cuál sería el impacto directo en el calendario si priorizamos esta tarea hoy mismo?"`;
-    let summary = `"Resumen de este punto: Queda confirmado el acuerdo y enviamos la síntesis por escrito."`;
+    // Response pools organized by detected context
+    const responseDB = {
+      pricing: {
+        detect: ['precio', 'presupuesto', 'costo', 'cuánto', 'pagar', 'inversión', 'factura', 'tarifa', 'cobro'],
+        direct: [
+          `"Tengo los números del presupuesto desglosados. Podemos ajustar el alcance para mantener el margen."`,
+          `"El presupuesto está dentro del rango aprobado. Puedo enviar el desglose detallado ahora mismo."`,
+          `"Hemos optimizado los costos un 15%. La propuesta actualizada refleja el ahorro."`,
+        ],
+        proposal: [
+          `"Propongo un esquema de pago por hitos completados para asegurar el flujo de caja."`,
+          `"Podemos dividir la inversión en fases para reducir el riesgo financiero."`,
+          `"Una alternativa es usar herramientas de código abierto para reducir los costos de licencias."`,
+        ],
+        question: [
+          `"¿Cuál es el tope presupuestario aprobado por la dirección para esta fase?"`,
+          `"¿Hay flexibilidad en el presupuesto si incluimos funcionalidades adicionales?"`,
+          `"¿Prefieren pago mensual recurrente o un pago único por entregable?"`,
+        ],
+        summary: [
+          `"Acuerdo de costos: Revisaremos la propuesta económica ajustada antes de finalizar el día."`,
+          `"Quedamos en confirmar el presupuesto final y enviar la factura proforma esta semana."`,
+        ]
+      },
+      timeline: {
+        detect: ['fecha', 'cuándo', 'tiempo', 'plazo', 'sprint', 'entrega', 'deadline', 'semana', 'calendario'],
+        direct: [
+          `"Podemos tener la primera versión lista para revisión en este sprint."`,
+          `"La fecha de entrega se mantiene. Estamos en un 75% de avance general."`,
+          `"El cronograma está al día. Los hitos principales se están cumpliendo."`,
+        ],
+        proposal: [
+          `"Propongo una entrega parcial el miércoles para validar avances."`,
+          `"Podemos comprimir el timeline 2 días si paralelizamos las tareas de frontend y backend."`,
+        ],
+        question: [
+          `"¿Quién será responsable de dar la aprobación final al momento de la entrega?"`,
+          `"¿Hay alguna dependencia externa que pueda afectar la fecha?"`,
+        ],
+        summary: [
+          `"Compromiso: Mantener la fecha de entrega y enviar reporte de avance diario."`,
+          `"Acordamos el siguiente milestone para el viernes con revisión intermedia."`,
+        ]
+      },
+      technical: {
+        detect: ['vercel', 'github', 'código', 'despliegue', 'api', 'backend', 'servidor', 'desarrollo', 'sistema', 'deploy', 'bug'],
+        direct: [
+          `"El repositorio está configurado con CI/CD automático. Cada commit genera un despliegue."`,
+          `"La arquitectura está diseñada de forma modular para escalar sin problemas."`,
+          `"El sistema está funcionando estable en producción con 99.9% de uptime."`,
+        ],
+        proposal: [
+          `"Sugiero implementar preview deployments para probar cada cambio antes de producción."`,
+          `"Podemos añadir monitoring automático para detectar problemas antes que los usuarios."`,
+        ],
+        question: [
+          `"¿Tienen los accesos de desarrollador listos o necesitan invitación al repositorio?"`,
+          `"¿Hay algún requerimiento de seguridad o compliance que debamos considerar?"`,
+        ],
+        summary: [
+          `"Resumen técnico: Integración continua lista, despliegue automático configurado."`,
+          `"Stack confirmado: Frontend en producción, API estable, monitoreo activo."`,
+        ]
+      },
+      negotiation: {
+        detect: ['propuesta', 'contrato', 'negociar', 'condiciones', 'términos', 'oferta', 'competencia', 'alternativa'],
+        direct: [
+          `"Nuestra propuesta es competitiva y cubre todos los requerimientos solicitados."`,
+          `"Estamos abiertos a ajustar las condiciones para llegar a un acuerdo favorable para ambos."`,
+        ],
+        proposal: [
+          `"Propongo incluir un periodo de prueba de 30 días para demostrar el valor."`,
+          `"Podemos ofrecer un descuento del 10% si cerramos el acuerdo esta semana."`,
+        ],
+        question: [
+          `"¿Qué aspectos de la propuesta son más importantes para tomar la decisión?"`,
+          `"¿Están evaluando otras alternativas o propuestas en paralelo?"`,
+        ],
+        summary: [
+          `"Próximos pasos: Enviar propuesta ajustada con las condiciones discutidas hoy."`,
+        ]
+      },
+      objection: {
+        detect: ['no estoy seguro', 'no creo', 'difícil', 'complicado', 'preocupa', 'riesgo', 'imposible', 'no funciona'],
+        direct: [
+          `"Entiendo la preocupación. Permíteme explicar cómo mitigamos ese riesgo."`,
+          `"Es un punto válido. Tenemos un plan B preparado para ese escenario."`,
+        ],
+        proposal: [
+          `"Para reducir el riesgo, podemos hacer un piloto pequeño antes del lanzamiento completo."`,
+          `"Propongo un POC de 2 semanas para validar la viabilidad técnica antes de comprometernos."`,
+        ],
+        question: [
+          `"¿Cuál es específicamente el punto que genera más preocupación?"`,
+          `"¿Qué evidencia o garantías necesitarían para sentirse más cómodos con la decisión?"`,
+        ],
+        summary: [
+          `"Identificamos las preocupaciones clave. Siguiente paso: propuesta de mitigación de riesgos."`,
+        ]
+      },
+      greeting: {
+        detect: ['hola', 'buenos', 'empezar', 'listo', 'iniciar', 'comenzar', 'bienvenido'],
+        direct: [
+          `"Hola, excelente día. Estoy listo para repasar los puntos principales de la agenda."`,
+          `"Hola a todos. Tengo los materiales preparados, podemos comenzar cuando gusten."`,
+        ],
+        proposal: [
+          `"Propongo dedicar los primeros 5 minutos a repasar los objetivos y luego los avances."`,
+          `"Sugiero empezar con un resumen rápido de lo pendiente del meeting anterior."`,
+        ],
+        question: [
+          `"¿Todos me escuchan bien y pueden ver la información?"`,
+          `"¿Hay algún tema adicional que debamos agregar a la agenda de hoy?"`,
+        ],
+        summary: [
+          `"Reunión iniciada con transcripción y copiloto de IA en vivo. Grabación activa."`,
+        ]
+      },
+      design: {
+        detect: ['diseño', 'ui', 'ux', 'interfaz', 'prototipo', 'mockup', 'figma', 'colores', 'tipografía', 'layout'],
+        direct: [
+          `"El diseño sigue las mejores prácticas de UX moderna con un enfoque mobile-first."`,
+          `"Los prototipos están listos para revisión. Incluyen las iteraciones del feedback anterior."`,
+        ],
+        proposal: [
+          `"Propongo hacer una sesión de testing de usabilidad con 5 usuarios antes de desarrollar."`,
+          `"Podemos crear un design system reutilizable para mantener consistencia visual."`,
+        ],
+        question: [
+          `"¿Tienen preferencias de marca o guías de estilo que debamos seguir?"`,
+          `"¿El diseño debe ser responsive o tiene prioridad una plataforma específica?"`,
+        ],
+        summary: [
+          `"Diseño aprobado con las modificaciones discutidas. Siguiente: implementación."`,
+        ]
+      }
+    };
 
-    // 1. Preguntas sobre Precios, Presupuesto o Costos
-    if (text.includes('precio') || text.includes('presupuesto') || text.includes('costo') || text.includes('cuánto') || text.includes('pagar')) {
-      direct = `"Tengo los números del presupuesto desglosados y podemos ajustar el alcance para mantener el margen dentro de lo planeado."`;
-      proposal = `"Podemos presentar un esquema de pago por hitos completados para asegurar el flujo de caja del proyecto."`;
-      question = `"¿Cuál es el tope presupuestario aprobado por la dirección para esta fase?"`;
-      summary = `"Acuerdo de costos: Quedamos en revisar la propuesta económica ajustada antes de finalizar el día."`;
+    // Find matching context
+    let matchedCtx = null;
+    for (const [key, ctx] of Object.entries(responseDB)) {
+      if (ctx.detect.some(k => text.includes(k))) {
+        matchedCtx = ctx;
+        break;
+      }
     }
 
-    // 2. Preguntas sobre Fechas, Plazos, Sprint o Entregas
-    else if (text.includes('fecha') || text.includes('cuándo') || text.includes('tiempo') || text.includes('plazo') || text.includes('sprint') || text.includes('entrega')) {
-      direct = `"Podemos tener la primera versión funcional lista para revisión en el transcurso del sprint activo."`;
-      proposal = `"Propongo programar una entrega parcial el miércoles para validar los avances antes del cierre semanal."`;
-      question = `"¿Quién será la persona responsable de dar la aprobación final al momento de la entrega?"`;
-      summary = `"Compromiso de fecha: Acordamos mantener la fecha de entrega y enviar reporte de avance diario."`;
+    // Fallback to generic responses
+    if (!matchedCtx) {
+      matchedCtx = {
+        direct: [
+          `"Totalmente de acuerdo con lo que mencionas, ${speaker}. Podemos avanzar con ese enfoque."`,
+          `"Excelente punto. Estoy alineado y podemos proceder inmediatamente."`,
+        ],
+        proposal: [
+          `"Una opción práctica es dividir el entregable en dos fases cortas para medir avances."`,
+          `"Propongo documentar los acuerdos de hoy y enviar un resumen ejecutivo por email."`,
+        ],
+        question: [
+          `"¿Cuál sería el impacto directo si priorizamos esta tarea hoy?"`,
+          `"¿Hay algún bloqueador que debamos resolver antes de avanzar?"`,
+        ],
+        summary: [
+          `"Resumen: Queda confirmado el acuerdo. Enviaremos la síntesis por escrito."`,
+          `"Próximos pasos definidos. Seguimiento programado para esta semana."`,
+        ]
+      };
     }
 
-    // 3. Preguntas sobre Vercel, GitHub, Código o Servidores
-    else if (text.includes('vercel') || text.includes('github') || text.includes('servidor') || text.includes('código') || text.includes('despliegue') || text.includes('git')) {
-      direct = `"El repositorio de GitHub ya está configurado con Vercel para generar despliegues automáticos en cada commit en main."`;
-      proposal = `"Podemos habilitar URLs de vista previa (preview deployments) en Vercel para probar cada cambio antes de ir a producción."`;
-      question = `"¿Tienen los accesos de desarrollador listos en el equipo o prefieren que les envíe la invitación al repositorio?"`;
-      summary = `"Acuerdo técnico: Repositorio en GitHub vinculado a Vercel con integración continua lista."`;
-    }
-
-    // 4. Preguntas sobre Integraciones, APIs o Funcionalidades
-    else if (text.includes('api') || text.includes('integración') || text.includes('función') || text.includes('desarrollo') || text.includes('sistema')) {
-      direct = `"La arquitectura de la API está diseñada de forma modular para procesar las peticiones en tiempo real sin latencia."`;
-      proposal = `"Sugeriría reutilizar las estructuras de datos existentes para recortar el tiempo de integración a la mitad."`;
-      question = `"¿Existe algún requerimiento de autenticación específico que debamos considerar antes de abrir los endpoints?"`;
-      summary = `"Síntesis: Integración confirmada con respuesta en tiempo real."`;
-    }
-
-    // 5. Saludos o Inicio de Reunión
-    else if (text.includes('hola') || text.includes('buenos') || text.includes('empezar') || text.includes('listo') || text.includes('iniciar')) {
-      direct = `"Hola, excelente día a todos. Estoy listo para repasar los puntos principales de la agenda."`;
-      proposal = `"Propongo dedicar los primeros 5 minutos a repasar los objetivos clave y luego revisar los avances."`;
-      question = `"¿Todos me escuchan bien y pueden ver la información en pantalla?"`;
-      summary = `"Inicio confirmado: Reunión iniciada con transcripción y copiloto de IA en vivo."`;
-    }
+    // Pick random from each pool
+    const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
     return [
       {
         type: 'direct',
-        title: '⚡ Respuesta Directa e Inmediata',
+        title: '⚡ Respuesta Directa',
         icon: 'fa-circle-check',
-        text: direct
+        text: pick(matchedCtx.direct)
       },
       {
         type: 'proposal',
         title: '💡 Propuesta Estratégica',
         icon: 'fa-lightbulb',
-        text: proposal
+        text: pick(matchedCtx.proposal)
       },
       {
         type: 'question',
         title: '❓ Pregunta de Clarificación',
         icon: 'fa-circle-question',
-        text: question
+        text: pick(matchedCtx.question)
       },
       {
         type: 'summary',
         title: '📌 Síntesis / Cierre',
         icon: 'fa-list-check',
-        text: summary
+        text: pick(matchedCtx.summary)
       }
     ];
-  }
-
-  extractMainTopic(recentText, fullText) {
-    const lower = (recentText + ' ' + fullText).toLowerCase();
-
-    if (lower.includes('vercel') || lower.includes('github') || lower.includes('despliegue')) {
-      return "Arquitectura Web & Despliegue Vercel/Git";
-    }
-    if (lower.includes('presupuesto') || lower.includes('costo') || lower.includes('precio')) {
-      return "Análisis de Presupuesto y Recursos Económicos";
-    }
-    if (lower.includes('diseño') || lower.includes('ui') || lower.includes('interfaz')) {
-      return "Diseño de Interfaz de Usuario y UX";
-    }
-    if (lower.includes('api') || lower.includes('backend') || lower.includes('servidor')) {
-      return "Integración Backend y APIs en Tiempo Real";
-    }
-    if (lower.includes('fecha') || lower.includes('entrega') || lower.includes('sprint')) {
-      return "Planificación de Fechas y Entregables de Sprint";
-    }
-
-    const words = recentText.split(' ').filter(w => w.length > 5);
-    if (words.length >= 2) {
-      return `Conversación sobre ${words.slice(-2).join(' ')}`;
-    }
-
-    return "Coordinación y Estrategia de la Reunión";
-  }
-
-  analyzeSentiment(text) {
-    const lower = text.toLowerCase();
-    if (lower.includes('excelente') || lower.includes('perfecto') || lower.includes('acuerdo') || lower.includes('bien')) {
-      return "Positivo / Colaborativo";
-    }
-    if (lower.includes('problema') || lower.includes('urgente') || lower.includes('error')) {
-      return "Atención Requerida";
-    }
-    return "Analítico / Técnico";
-  }
-
-  extractItems(history) {
-    const agreementsSet = new Set(this.agreements);
-    const actionItemsSet = new Set(this.actionItems);
-
-    history.forEach(item => {
-      const lower = item.text.toLowerCase();
-      if (lower.includes('acordamos') || lower.includes('fijar') || lower.includes('definir') || lower.includes('confirmado')) {
-        agreementsSet.add(`${item.speaker}: ${item.text}`);
-      }
-      if (lower.includes('necesitamos') || lower.includes('tarea') || lower.includes('entregar') || lower.includes('hacer')) {
-        actionItemsSet.add(`${item.speaker}: ${item.text}`);
-      }
-    });
-
-    this.agreements = Array.from(agreementsSet).slice(-5);
-    this.actionItems = Array.from(actionItemsSet).slice(-5);
   }
 
   getDefaultSuggestions() {
     return [
       {
         type: 'direct',
-        title: '⚡ Respuesta Directa e Inmediata',
+        title: '⚡ Respuesta Directa',
         icon: 'fa-circle-check',
         text: '"Hola a todos, estoy listo para iniciar y repasar los puntos principales."'
       },
@@ -214,19 +364,40 @@ class AIEngine {
         type: 'question',
         title: '❓ Pregunta de Clarificación',
         icon: 'fa-circle-question',
-        text: '"¿Todos pueden escucharme con claridad y ver los datos en pantalla?"'
+        text: '"¿Todos pueden escucharme con claridad y ver los datos?"'
       },
       {
         type: 'summary',
         title: '📌 Síntesis / Cierre',
         icon: 'fa-list-check',
-        text: '"Confirmado, tenemos la transcripción en vivo y el copiloto de IA activado."'
+        text: '"Confirmado: transcripción en vivo y copiloto de IA activado."'
       }
     ];
   }
 
-  async queryCustomCopilot(prompt, fullTranscript) {
-    return `[Copiloto IA]: Para responder a "${prompt}", te sugiero decir inmediatamente: "Respecto a ese punto, podemos avanzar manteniendo la calidad de ejecución en Vercel."`;
+  /**
+   * Custom prompt handler
+   */
+  queryCustomCopilot(prompt, transcriptHistory) {
+    const context = transcriptHistory.slice(-5).map(t => t.text).join(' ');
+    const topic = this.currentTopic;
+
+    // Generate contextual response based on prompt and conversation
+    const lower = prompt.toLowerCase();
+
+    if (lower.includes('resumen') || lower.includes('resumir')) {
+      return `[Copiloto IA]: Resumen de la reunión hasta ahora — Tema principal: "${topic}". Se han discutido ${transcriptHistory.length} intervenciones. ${this.agreements.length > 0 ? 'Acuerdos: ' + this.agreements.slice(-2).join('; ') : 'No hay acuerdos registrados aún.'}`;
+    }
+
+    if (lower.includes('qué digo') || lower.includes('qué respondo') || lower.includes('ayuda')) {
+      return `[Copiloto IA]: Basándome en el contexto actual sobre "${topic}", te sugiero responder: "He revisado todos los puntos y estoy de acuerdo con avanzar según lo propuesto. ¿Procedemos con la siguiente fase?"`;
+    }
+
+    if (lower.includes('dato') || lower.includes('número') || lower.includes('estadística')) {
+      return `[Copiloto IA]: En esta reunión se han registrado ${transcriptHistory.length} intervenciones, ${this.agreements.length} acuerdos y ${this.actionItems.length} tareas pendientes. El sentimiento general es: ${this.sentiment}.`;
+    }
+
+    return `[Copiloto IA]: Respecto a "${prompt}" en el contexto de "${topic}", te sugiero: "Es un punto importante. Propongo que lo incluyamos como tema prioritario y definamos un plan de acción concreto para resolverlo esta semana."`;
   }
 }
 
