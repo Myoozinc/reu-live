@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ReuLive AI | Grabador de Reuniones & Copiloto en Tiempo Real</title>
-  <meta name="description" content="Graba tus reuniones de Zoom y del sistema en tiempo real, extrae el tema principal en vivo y recibe respuestas sugeridas por inteligencia artificial durante la llamada.">
+  <title>ReuLive AI | Copiloto & Grabador de Reuniones en Tiempo Real</title>
+  <meta name="description" content="Graba reuniones de Zoom y audio del sistema en tiempo real, extrae el tema principal en vivo y genera posibles respuestas sugeridas usando Google Gemini AI.">
   <!-- Fonts & Icons -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,8 +21,8 @@
         <i class="fa-solid fa-waveform-lines"></i>
       </div>
       <div class="logo-text">
-        <h1>ReuLive <span class="badge-ai">AI LIVE</span></h1>
-        <p class="subtitle">Copiloto & Grabador de Reuniones</p>
+        <h1>ReuLive <span class="badge-ai"><i class="fa-solid fa-sparkles"></i> GEMINI AI</span></h1>
+        <p class="subtitle">Copiloto & Grabador en Tiempo Real</p>
       </div>
     </div>
 
@@ -51,8 +51,8 @@
         <i class="fa-solid fa-plug-circle-bolt"></i> Conectar Zoom / Audio
       </button>
 
-      <button id="btnGitGuide" class="btn btn-secondary">
-        <i class="fa-brands fa-github"></i> Git & Vercel
+      <button id="btnConfigGemini" class="btn btn-secondary">
+        <i class="fa-solid fa-key text-amber"></i> Gemini API Key
       </button>
 
       <button id="btnExportReport" class="btn btn-outline" disabled>
@@ -90,12 +90,12 @@
           
           <div class="video-placeholder" id="videoPlaceholder">
             <div class="placeholder-icon">
-              <i class="fa-solid fa-video-slash"></i>
+              <i class="fa-solid fa-headset"></i>
             </div>
-            <h3>Ningún dispositivo o Zoom conectado</h3>
-            <p>Haz clic en <strong>"Conectar Zoom / Audio"</strong> arriba para transmitir pantalla, audio de Zoom o probar el <strong>Modo Simulación Live</strong>.</p>
-            <button class="btn btn-primary" id="btnQuickStartDemo">
-              <i class="fa-solid fa-bolt"></i> Probar Demo en Vivo Ahora
+            <h3>Conecta el Audio o Video de tu Dispositivo</h3>
+            <p>Captura el audio de tu llamada en <strong>Zoom, Google Meet, Microsoft Teams</strong> o el micrófono de tu dispositivo para transcribir y obtener respuestas con Inteligencia Artificial en tiempo real.</p>
+            <button class="btn btn-primary glow-btn" id="btnMainConnect">
+              <i class="fa-solid fa-plug-circle-bolt"></i> Iniciar Captura de Audio de Zoom / Sistema
             </button>
           </div>
 
@@ -111,6 +111,10 @@
               <span>Audio Entrada: <strong id="micVolumeLevel">0%</strong></span>
             </div>
             <div class="metric-chip">
+              <i class="fa-solid fa-brain text-purple"></i>
+              <span>Motor IA: <strong id="aiModelText">Gemini 1.5 Flash</strong></span>
+            </div>
+            <div class="metric-chip">
               <i class="fa-solid fa-chart-line text-emerald"></i>
               <span>Sentimiento: <strong id="sentimentText">Neutral</strong></span>
             </div>
@@ -124,7 +128,7 @@
               <i class="fa-solid fa-circle-dot"></i> Iniciar Grabación
             </button>
             <button id="btnStopRecord" class="btn btn-danger" style="display: none;">
-              <i class="fa-solid fa-square"></i> Detener & Guardar
+              <i class="fa-solid fa-square"></i> Detener & Guardar Grabación
             </button>
           </div>
 
@@ -166,10 +170,10 @@
           
           <div class="copilot-header">
             <div class="copilot-title">
-              <h3><i class="fa-solid fa-sparkles text-amber"></i> Respuestas Sugeridas en Tiempo Real</h3>
-              <p>Basado en lo que se está hablando en tu llamada ahora mismo:</p>
+              <h3><i class="fa-solid fa-sparkles text-amber"></i> Respuestas Sugeridas por Gemini AI</h3>
+              <p>Opciones de respuesta generadas en vivo según lo hablado en la reunión:</p>
             </div>
-            <button id="btnRefreshCopilot" class="btn-icon-soft" title="Generar nuevas opciones">
+            <button id="btnRefreshCopilot" class="btn-icon-soft" title="Generar nuevas opciones con IA">
               <i class="fa-solid fa-rotate"></i>
             </button>
           </div>
@@ -177,10 +181,9 @@
           <!-- Dynamic Suggestions Grid -->
           <div class="suggestions-list" id="suggestionsContainer">
             
-            <!-- Default Welcome Suggestions -->
             <div class="suggestion-card card-direct">
               <div class="card-tag"><i class="fa-solid fa-circle-check"></i> Respuesta Directa</div>
-              <p class="suggestion-text">"Perfecto, entiendo el objetivo. Podemos revisar los datos clave y avanzar con los siguientes pasos inmediatamente."</p>
+              <p class="suggestion-text">"Entendido. Podemos revisar los datos clave y avanzar con los siguientes pasos de forma inmediata."</p>
               <div class="card-actions">
                 <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
                 <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
@@ -188,8 +191,8 @@
             </div>
 
             <div class="suggestion-card card-proposal">
-              <div class="card-tag"><i class="fa-solid fa-lightbulb"></i> Propuesta Alternativa</div>
-              <p class="suggestion-text">"Una alternativa eficiente sería automatizar esa etapa usando un script o API para ahorrar tiempo de desarrollo."</p>
+              <div class="card-tag"><i class="fa-solid fa-lightbulb"></i> Propuesta / Alternativa</div>
+              <p class="suggestion-text">"Una alternativa eficiente es integrar la API de Gemini directamente para automatizar esta fase y acelerar el desarrollo."</p>
               <div class="card-actions">
                 <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
                 <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
@@ -197,8 +200,8 @@
             </div>
 
             <div class="suggestion-card card-question">
-              <div class="card-tag"><i class="fa-solid fa-circle-question"></i> Pregunta Clave</div>
-              <p class="suggestion-text">"¿Cuál es el tiempo estimado de entrega y quién liderará la aprobación final de esta fase?"</p>
+              <div class="card-tag"><i class="fa-solid fa-circle-question"></i> Pregunta Estratégica</div>
+              <p class="suggestion-text">"¿Cuál es el tiempo estimado de entrega y quién liderará la aprobación final de esta etapa?"</p>
               <div class="card-actions">
                 <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
                 <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
@@ -207,7 +210,7 @@
 
             <div class="suggestion-card card-summary">
               <div class="card-tag"><i class="fa-solid fa-list-check"></i> Resumen de Cierre</div>
-              <p class="suggestion-text">"Para confirmar: acordamos definir el alcance hoy y enviar la propuesta formal mañana a primera hora."</p>
+              <p class="suggestion-text">"Para confirmar: acordamos definir el alcance hoy y desplegar la solución en Vercel."</p>
               <div class="card-actions">
                 <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
                 <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
@@ -220,8 +223,8 @@
           <div class="copilot-input-bar">
             <div class="input-wrapper">
               <i class="fa-solid fa-wand-magic-sparkles text-purple"></i>
-              <input type="text" id="customPromptInput" placeholder="Pregunta en secreto al copiloto durante la reunión...">
-              <button id="btnSendCustomPrompt" class="btn-send">
+              <input type="text" id="customPromptInput" placeholder="Pregunta en secreto a Gemini durante la llamada...">
+              <button id="btnSendCustomPrompt" class="btn-send" title="Enviar a Gemini">
                 <i class="fa-solid fa-paper-plane"></i>
               </button>
             </div>
@@ -242,7 +245,7 @@
           <div class="transcript-stream" id="transcriptStream">
             <div class="stream-item system-msg">
               <span class="time">00:00</span>
-              <span class="text"><i class="fa-solid fa-info-circle"></i> Inicia o conecta el audio para comenzar a transcribir la llamada en tiempo real...</span>
+              <span class="text"><i class="fa-solid fa-info-circle"></i> Inicia la conexión de audio para transcribir la llamada en tiempo real...</span>
             </div>
           </div>
         </div>
@@ -256,13 +259,13 @@
           <div class="analytics-body">
             
             <div class="analytics-card">
-              <h4><i class="fa-solid fa-tags text-cyan"></i> Temas Tratados en la Reunión</h4>
+              <h4><i class="fa-solid fa-tags text-cyan"></i> Temas Extraídos de la Reunión</h4>
               <ul class="topic-timeline" id="topicTimelineList">
                 <li class="active-topic">
                   <span class="time-badge">Ahora</span>
                   <div class="topic-info">
-                    <strong>Bienvenida y Contexto General</strong>
-                    <p>Inicio de sesión y sincronización de participantes.</p>
+                    <strong id="analyticsCurrentTopic">Estrategia General y Coordinación</strong>
+                    <p>Monitoreo continuo con inteligencia artificial.</p>
                   </div>
                 </li>
               </ul>
@@ -271,14 +274,14 @@
             <div class="analytics-card">
               <h4><i class="fa-solid fa-handshake text-emerald"></i> Acuerdos Tomados</h4>
               <ul class="bullet-list" id="agreementsList">
-                <li><i class="fa-solid fa-check text-emerald"></i> Sistema de grabación y transcripción habilitado.</li>
+                <li><i class="fa-solid fa-check text-emerald"></i> Captura de audio y transcripción continua activa.</li>
               </ul>
             </div>
 
             <div class="analytics-card">
               <h4><i class="fa-solid fa-list-check text-amber"></i> Tareas & Action Items</h4>
               <ul class="bullet-list" id="actionItemsList">
-                <li><i class="fa-regular fa-square text-amber"></i> Conectar el repositorio de GitHub con Vercel.</li>
+                <li><i class="fa-regular fa-square text-amber"></i> Despliegue en Vercel completado desde GitHub.</li>
               </ul>
             </div>
 
@@ -290,7 +293,7 @@
 
   </main>
 
-  <!-- MODAL 1: Zoom / System Audio Connection Wizard -->
+  <!-- MODAL 1: Connection Selector Wizard -->
   <div class="modal-backdrop" id="modalConnection" style="display: none;">
     <div class="modal-card glass-panel">
       <div class="modal-header">
@@ -299,7 +302,7 @@
       </div>
 
       <div class="modal-body">
-        <p class="modal-desc">Selecciona cómo deseas capturar el audio o video de tu llamada de Zoom o reunión:</p>
+        <p class="modal-desc">Selecciona la fuente de entrada de tu reunión:</p>
 
         <div class="connection-options">
           
@@ -308,9 +311,9 @@
               <i class="fa-solid fa-desktop"></i>
             </div>
             <div class="option-content">
-              <h3>Zoom / Pantalla del Sistema con Audio</h3>
+              <h3>Zoom / Pantalla del Dispositivo con Audio</h3>
               <p>Captura el audio directamente de la ventana de Zoom o pantalla completa y combínalo con tu micrófono.</p>
-              <span class="tag-recommend">Recomendado para Zoom</span>
+              <span class="tag-recommend">Recomendado para Zoom / Meet / Teams</span>
             </div>
           </div>
 
@@ -320,17 +323,7 @@
             </div>
             <div class="option-content">
               <h3>Solo Micrófono del Dispositivo</h3>
-              <p>Ideal si estás en una llamada en altavoz o quieres transcribir tu voz en directo.</p>
-            </div>
-          </div>
-
-          <div class="option-card" id="optLiveDemo">
-            <div class="option-icon bg-amber">
-              <i class="fa-solid fa-play"></i>
-            </div>
-            <div class="option-content">
-              <h3>Simulación en Vivo de Reunión Zoom (Demo)</h3>
-              <p>Prueba el copiloto inmediatamente con una llamada de reunión simulada de 2 hablantes en tiempo real.</p>
+              <p>Captura el audio ambiente o llamadas en altavoz directamente desde tu micrófono.</p>
             </div>
           </div>
 
@@ -339,49 +332,28 @@
     </div>
   </div>
 
-  <!-- MODAL 2: Git & Vercel Deployment Helper -->
-  <div class="modal-backdrop" id="modalGitVercel" style="display: none;">
-    <div class="modal-card glass-panel modal-wide">
+  <!-- MODAL 2: Gemini API Key Settings -->
+  <div class="modal-backdrop" id="modalGeminiKey" style="display: none;">
+    <div class="modal-card glass-panel">
       <div class="modal-header">
-        <h2><i class="fa-brands fa-github text-white"></i> Guía Paso a Paso: Git & Vercel</h2>
-        <button class="btn-close" id="btnCloseModalGit"><i class="fa-solid fa-xmark"></i></button>
+        <h2><i class="fa-solid fa-key text-amber"></i> Configuración de Google Gemini AI</h2>
+        <button class="btn-close" id="btnCloseModalGemini"><i class="fa-solid fa-xmark"></i></button>
       </div>
 
       <div class="modal-body">
-        
-        <div class="guide-steps">
-          
-          <div class="step-box">
-            <div class="step-num">1</div>
-            <div class="step-content">
-              <h3>Subir los archivos a GitHub</h3>
-              <p>Tu repositorio <code>https://github.com/Myoozinc/reu-live.git</code> está creado pero actualmente está vacío. Copia y ejecuta estos comandos en tu terminal:</p>
-              <div class="code-block">
-                <code>
-                  git init<br>
-                  git add .<br>
-                  git commit -m "feat: Initial ReuLive application release"<br>
-                  git branch -M main<br>
-                  git remote add origin https://github.com/Myoozinc/reu-live.git<br>
-                  git push -u origin main
-                </code>
-                <button class="btn-copy-code" data-code='git init && git add . && git commit -m "feat: Initial ReuLive release" && git branch -M main && git remote add origin https://github.com/Myoozinc/reu-live.git && git push -u origin main'>
-                  <i class="fa-regular fa-copy"></i> Copiar Comandos
-                </button>
-              </div>
-            </div>
-          </div>
+        <p class="modal-desc">Ingresa tu API Key gratuita de Google Gemini para potenciar la extracción del tema principal y sugerencias personalizadas en tiempo real:</p>
 
-          <div class="step-box">
-            <div class="step-num">2</div>
-            <div class="step-content">
-              <h3>Desplegar automáticamente en Vercel</h3>
-              <p>Una vez completado el <code>git push</code>, regresa a la pestaña de Vercel y haz clic en <strong>"Deploy"</strong> o recarga la página. Vercel detectará los archivos y creará tu enlace web público en segundos.</p>
-            </div>
-          </div>
-
+        <div class="input-group-vertical">
+          <label for="geminiApiKeyInput">Clave API de Gemini (Google AI Studio):</label>
+          <input type="password" id="geminiApiKeyInput" placeholder="AIzaSy..." class="full-input">
+          <span class="input-hint"><i class="fa-solid fa-shield-halved"></i> Tu clave se guarda únicamente de forma privada en el almacenamiento local de tu navegador.</span>
         </div>
 
+        <div class="modal-footer-actions">
+          <button id="btnSaveGeminiKey" class="btn btn-primary full-width">
+            <i class="fa-solid fa-floppy-disk"></i> Guardar y Activar Gemini AI
+          </button>
+        </div>
       </div>
     </div>
   </div>
