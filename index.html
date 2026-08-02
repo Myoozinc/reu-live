@@ -4,8 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>ReuLive AI | Copiloto & Grabador de Reuniones en Tiempo Real</title>
-  <meta name="description" content="Graba reuniones de Zoom en tiempo real, transcribe automáticamente, extrae el tema principal y genera respuestas sugeridas con IA.">
-  <!-- Fonts & Icons -->
+  <meta name="description" content="Graba reuniones de Zoom en tiempo real, transcribe automáticamente, extrae el tema principal y genera respuestas con IA.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -26,7 +25,6 @@
       </div>
     </div>
 
-    <!-- Live Status & Topic -->
     <div class="status-center">
       <div id="liveStatusBadge" class="status-badge status-offline">
         <span class="status-dot"></span>
@@ -39,19 +37,15 @@
       </div>
     </div>
 
-    <!-- Header Actions -->
     <div class="header-actions">
       <div class="timer-display" id="meetingTimer">
         <i class="fa-regular fa-clock"></i>
         <span id="timerText">00:00</span>
       </div>
-
-      <!-- SINGLE CAPTURE BUTTON -->
       <button id="btnCapture" class="btn btn-primary glow-btn">
         <i class="fa-solid fa-circle-dot"></i>
         <span id="btnCaptureText">Iniciar Captura</span>
       </button>
-
       <button id="btnExportReport" class="btn btn-outline" disabled title="Exportar Informe">
         <i class="fa-solid fa-file-export"></i>
       </button>
@@ -61,7 +55,7 @@
   <!-- ===== Main Unified Layout ===== -->
   <main class="app-unified">
 
-    <!-- === Capture Section (Video/Screen + Subtitles + Visualizer) === -->
+    <!-- === Capture Section === -->
     <section class="capture-section" id="captureSection">
       <div class="capture-viewport glass-panel">
 
@@ -88,7 +82,6 @@
         <div class="video-container" id="videoContainer">
           <video id="captureVideo" autoplay playsinline muted class="video-feed"></video>
 
-          <!-- Placeholder when not capturing -->
           <div class="capture-placeholder" id="capturePlaceholder">
             <div class="placeholder-icon">
               <i class="fa-solid fa-headset"></i>
@@ -111,8 +104,18 @@
           </div>
         </div>
 
-        <!-- Audio Meters Footer -->
+        <!-- Controls Footer with Mic/Video Mute -->
         <div class="viewport-footer">
+          <div class="media-controls">
+            <button id="btnMuteMic" class="control-btn" title="Silenciar tu micrófono" disabled>
+              <i class="fa-solid fa-microphone"></i>
+              <span class="control-label">Mic</span>
+            </button>
+            <button id="btnMuteVideo" class="control-btn" title="Desactivar tu video" disabled>
+              <i class="fa-solid fa-video"></i>
+              <span class="control-label">Video</span>
+            </button>
+          </div>
           <div class="audio-mixer-info">
             <div class="channel">
               <i class="fa-solid fa-desktop text-purple"></i> Sistema:
@@ -127,53 +130,33 @@
       </div>
     </section>
 
-    <!-- === Copilot Section (Responses + Transcript + Analytics) === -->
+    <!-- === AI Chat Section (replaces suggestion cards) === -->
     <section class="copilot-section" id="copilotSection">
       <div class="copilot-card glass-panel">
 
-        <!-- Copilot Header -->
+        <!-- Chat Header -->
         <div class="copilot-header">
           <div class="copilot-title">
-            <h3><i class="fa-solid fa-sparkles text-amber"></i> Respuestas Sugeridas</h3>
-            <p class="copilot-subtitle">Responde de inmediato con ayuda de la IA</p>
+            <h3><i class="fa-solid fa-robot text-cyan"></i> Copiloto IA</h3>
+            <p class="copilot-subtitle">Interpreta la reunión y responde tus preguntas</p>
           </div>
-          <button id="btnRefreshCopilot" class="btn-icon-soft" title="Generar nuevas respuestas">
-            <i class="fa-solid fa-rotate"></i>
+          <button id="btnClearChat" class="btn-icon-soft" title="Limpiar chat">
+            <i class="fa-solid fa-trash"></i>
           </button>
         </div>
 
-        <!-- AI Suggestion Cards -->
-        <div class="suggestions-list" id="suggestionsContainer">
-          <div class="suggestion-card card-direct">
-            <div class="card-tag"><i class="fa-solid fa-circle-check"></i> ⚡ Respuesta Directa</div>
-            <p class="suggestion-text">"Entendido. Podemos revisar los datos clave y avanzar con los siguientes pasos de forma inmediata."</p>
-            <div class="card-actions">
-              <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
-              <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
-            </div>
-          </div>
-          <div class="suggestion-card card-proposal">
-            <div class="card-tag"><i class="fa-solid fa-lightbulb"></i> 💡 Propuesta</div>
-            <p class="suggestion-text">"Una alternativa eficiente es estructurar la solución de forma modular para acelerar el desarrollo."</p>
-            <div class="card-actions">
-              <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
-              <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
-            </div>
-          </div>
-          <div class="suggestion-card card-question">
-            <div class="card-tag"><i class="fa-solid fa-circle-question"></i> ❓ Pregunta</div>
-            <p class="suggestion-text">"¿Cuál es el tiempo estimado de entrega y quién liderará la aprobación final?"</p>
-            <div class="card-actions">
-              <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
-              <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
-            </div>
-          </div>
-          <div class="suggestion-card card-summary">
-            <div class="card-tag"><i class="fa-solid fa-list-check"></i> 📌 Síntesis</div>
-            <p class="suggestion-text">"Para confirmar: acordamos definir el alcance hoy y enviar la actualización por escrito."</p>
-            <div class="card-actions">
-              <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
-              <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
+        <!-- AI Chat Messages -->
+        <div class="ai-chat-messages" id="aiChatMessages">
+          <div class="chat-msg chat-ai">
+            <div class="chat-avatar"><i class="fa-solid fa-robot"></i></div>
+            <div class="chat-bubble">
+              <p>¡Hola! Soy tu copiloto IA. Cuando inicies la captura, analizaré la conversación en tiempo real. Puedes preguntarme:</p>
+              <ul class="chat-tips">
+                <li>"¿De qué están hablando?"</li>
+                <li>"Dame un resumen"</li>
+                <li>"¿Qué debo responder?"</li>
+                <li>"¿Cuáles son los acuerdos?"</li>
+              </ul>
             </div>
           </div>
         </div>
@@ -223,12 +206,14 @@
           </div>
         </details>
 
-        <!-- Custom AI Prompt Bar -->
+        <!-- Chat Input Bar with Voice Button -->
         <div class="copilot-input-bar">
           <div class="input-wrapper">
-            <i class="fa-solid fa-wand-magic-sparkles text-purple"></i>
-            <input type="text" id="customPromptInput" placeholder="Pregunta en secreto al copiloto...">
-            <button id="btnSendCustomPrompt" class="btn-send" title="Enviar al copiloto">
+            <button id="btnVoiceChat" class="btn-voice" title="Hablar al copiloto (mantén presionado)">
+              <i class="fa-solid fa-microphone"></i>
+            </button>
+            <input type="text" id="aiChatInput" placeholder="Escribe o habla al copiloto...">
+            <button id="btnSendChat" class="btn-send" title="Enviar">
               <i class="fa-solid fa-paper-plane"></i>
             </button>
           </div>
@@ -239,7 +224,6 @@
 
   </main>
 
-  <!-- JS Modules -->
   <script src="js/mediaEngine.js"></script>
   <script src="js/sttEngine.js"></script>
   <script src="js/aiEngine.js"></script>

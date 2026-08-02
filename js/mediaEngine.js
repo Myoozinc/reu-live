@@ -25,6 +25,9 @@ class MediaEngine {
     this.canvasCtx = null;
     this.animFrameId = null;
     this.onVolumeChange = null;
+    this.isMicMuted = false;
+    this.isVideoMuted = false;
+    this.micGainNode = null;
   }
 
   initCanvas(canvasElement) {
@@ -188,10 +191,10 @@ class MediaEngine {
         const micSource = this.audioContext.createMediaStreamSource(
           new MediaStream([micAudioTrack])
         );
-        const gain = this.audioContext.createGain();
-        micSource.connect(gain);
-        gain.connect(destination);
-        gain.connect(this.analyser);
+        this.micGainNode = this.audioContext.createGain();
+        micSource.connect(this.micGainNode);
+        this.micGainNode.connect(destination);
+        this.micGainNode.connect(this.analyser);
       }
     }
 
@@ -420,6 +423,53 @@ class MediaEngine {
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
+  /**
+   * Mute/unmute the user's microphone (for recording and audio mixing)
+   * This prevents the user's voice/noise from being captured
+   */
+  muteMic() {
+    if (this.micGainNode) {
+      this.micGainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+    }
+    // Also mute mic tracks directly
+    if (this.micStream) {
+      this.micStream.getAudioTracks().forEach(track => {
+        // Don't mute if it's the same as display audio
+        if (!this.displayStream || !this.displayStream.getAudioTracks().includes(track)) {
+          track.enabled = false;
+        }
+      });
+    }
+    this.isMicMuted = true;
+  }
+
+  unmuteMic() {
+    if (this.micGainNode) {
+      this.micGainNode.gain.setValueAtTime(1, this.audioContext.currentTime);
+    }
+    if (this.micStream) {
+      this.micStream.getAudioTracks().forEach(track => {
+        track.enabled = true;
+      });
+    }
+    this.isMicMuted = false;
+  }
+
+  /**
+   * Mute/unmute the video track (camera)
+   */
+  muteVideo() {
+    const vt = this.getVideoTrack();
+    if (vt) vt.enabled = false;
+    this.isVideoMuted = true;
+  }
+
+  unmuteVideo() {
+    const vt = this.getVideoTrack();
+    if (vt) vt.enabled = true;
+    this.isVideoMuted = false;
   }
 
   stopAll() {

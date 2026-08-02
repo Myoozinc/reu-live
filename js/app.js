@@ -1,7 +1,6 @@
 /**
  * ReuLive - Main Application Controller
- * Unified flow: One button to start capture, transcription, and AI copilot.
- * Everything visible simultaneously on the same screen.
+ * Unified flow with mic/video mute, AI chat interface, and voice-to-chat.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -14,6 +13,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let isActive = false;
   let timerInterval = null;
   let timerSeconds = 0;
+  let isVoiceChatting = false;
+  let voiceChatRecognition = null;
 
   // ===== DOM Elements =====
   // Header
@@ -38,11 +39,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const subtitlesText = document.getElementById('subtitlesText');
   const subtitlesOverlay = document.getElementById('subtitlesOverlay');
 
-  // Copilot Section
-  const suggestionsContainer = document.getElementById('suggestionsContainer');
-  const btnRefreshCopilot = document.getElementById('btnRefreshCopilot');
-  const customPromptInput = document.getElementById('customPromptInput');
-  const btnSendCustomPrompt = document.getElementById('btnSendCustomPrompt');
+  // Media Controls (Mute buttons)
+  const btnMuteMic = document.getElementById('btnMuteMic');
+  const btnMuteVideo = document.getElementById('btnMuteVideo');
+
+  // AI Chat
+  const aiChatMessages = document.getElementById('aiChatMessages');
+  const aiChatInput = document.getElementById('aiChatInput');
+  const btnSendChat = document.getElementById('btnSendChat');
+  const btnVoiceChat = document.getElementById('btnVoiceChat');
+  const btnClearChat = document.getElementById('btnClearChat');
 
   // Transcript
   const transcriptStream = document.getElementById('transcriptStream');
@@ -75,7 +81,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ===== STT Callbacks =====
-  // Live subtitles (interim results)
   sttEngine.onInterimResult = (text) => {
     if (subtitlesText) {
       subtitlesText.textContent = text;
@@ -83,12 +88,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  // Final results → AI processing + transcript update
-  sttEngine.onFinalResult = async (chunk) => {
+  sttEngine.onFinalResult = (chunk) => {
     // Add to transcript
     appendTranscriptItem(chunk);
 
-    // Show final text briefly as subtitle
+    // Brief subtitle display
     if (subtitlesText) {
       subtitlesText.textContent = chunk.text;
       subtitlesOverlay.classList.add('visible');
@@ -99,9 +103,17 @@ document.addEventListener('DOMContentLoaded', () => {
       }, 3000);
     }
 
-    // Process with AI Engine immediately
-    const aiResults = aiEngine.processTranscript(sttEngine.transcriptHistory);
-    updateAIUI(aiResults);
+    // Process with AI Engine
+    const aiMeta = aiEngine.processTranscript(sttEngine.transcriptHistory);
+    if (aiMeta) {
+      updateMetaUI(aiMeta);
+    }
+
+    // Check if AI should auto-generate an insight message
+    const autoInsight = aiEngine.checkAutoInsight(sttEngine.transcriptHistory);
+    if (autoInsight) {
+      addChatMessage('insight', autoInsight);
+    }
   };
 
   sttEngine.onStatusChange = (status) => {
@@ -110,24 +122,72 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  // ===== MIC MUTE / VIDEO MUTE =====
+  let isMicMuted = false;
+  let isVideoMuted = false;
+
+  btnMuteMic.addEventListener('click', () => {
+    if (!isActive) return;
+
+    isMicMuted = !isMicMuted;
+
+    if (isMicMuted) {
+      mediaEngine.muteMic();
+      btnMuteMic.classList.add('muted');
+      btnMuteMic.querySelector('i').className = 'fa-solid fa-microphone-slash';
+      btnMuteMic.querySelector('.control-label').textContent = 'Mic Off';
+
+      // Also pause STT when mic is muted (so user noise doesn't get transcribed)
+      // But we keep listening for system audio on desktop
+      // On mobile, we pause completely since mic IS the source
+      if (mediaEngine.isMobile()) {
+        sttEngine.stopListening();
+      }
+    } else {
+      mediaEngine.unmuteMic();
+      btnMuteMic.classList.remove('muted');
+      btnMuteMic.querySelector('i').className = 'fa-solid fa-microphone';
+      btnMuteMic.querySelector('.control-label').textContent = 'Mic';
+
+      if (mediaEngine.isMobile()) {
+        sttEngine.startListening();
+      }
+    }
+  });
+
+  btnMuteVideo.addEventListener('click', () => {
+    if (!isActive) return;
+
+    isVideoMuted = !isVideoMuted;
+
+    if (isVideoMuted) {
+      mediaEngine.muteVideo();
+      btnMuteVideo.classList.add('muted');
+      btnMuteVideo.querySelector('i').className = 'fa-solid fa-video-slash';
+      btnMuteVideo.querySelector('.control-label').textContent = 'Video Off';
+    } else {
+      mediaEngine.unmuteVideo();
+      btnMuteVideo.classList.remove('muted');
+      btnMuteVideo.querySelector('i').className = 'fa-solid fa-video';
+      btnMuteVideo.querySelector('.control-label').textContent = 'Video';
+    }
+  });
+
   // ===== SINGLE CAPTURE BUTTON =====
   const startCapture = async () => {
     if (isActive) {
-      // STOP everything
       await stopCapture();
       return;
     }
 
     try {
-      // Update UI to "connecting" state
       btnCapture.disabled = true;
       btnCaptureText.textContent = 'Conectando...';
       updateStatus(true, 'CONECTANDO...');
 
-      // Start unified capture (auto-detects device)
       const result = await mediaEngine.startUnifiedCapture();
 
-      // Show video if available
+      // Show video
       if (result.hasVideo) {
         const videoStream = mediaEngine.getVideoStream();
         if (videoStream) {
@@ -137,24 +197,27 @@ document.addEventListener('DOMContentLoaded', () => {
         capturePlaceholder.style.display = 'none';
       } else {
         capturePlaceholder.style.display = 'none';
-        // Show a "audio only" indicator
-        captureVideo.classList.remove('active');
       }
 
-      // Update source label
       sourceLabel.textContent = `Fuente: ${result.sourceLabel}`;
 
-      // Start recording immediately
+      // Start recording
       mediaEngine.startRecording();
 
-      // Start speech recognition
+      // Start STT
       sttEngine.startListening();
 
       // Start timer
       startTimer();
 
+      // Enable mute buttons
+      btnMuteMic.disabled = false;
+      btnMuteVideo.disabled = false;
+
       // Update UI
       isActive = true;
+      isMicMuted = false;
+      isVideoMuted = false;
       btnCapture.disabled = false;
       btnCapture.classList.remove('btn-primary');
       btnCapture.classList.add('btn-danger');
@@ -163,6 +226,16 @@ document.addEventListener('DOMContentLoaded', () => {
       btnExportReport.disabled = false;
 
       updateStatus(true, 'GRABANDO EN VIVO');
+
+      // Add chat message
+      addChatMessage('ai', '🎙️ Captura iniciada. Estoy escuchando la reunión y analizando la conversación en tiempo real. Pregúntame lo que necesites.');
+
+      // Listen for screen share ending
+      if (mediaEngine.displayStream) {
+        mediaEngine.displayStream.getVideoTracks().forEach(track => {
+          track.onended = () => stopCapture();
+        });
+      }
 
     } catch (err) {
       console.error('Capture error:', err);
@@ -174,30 +247,32 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const stopCapture = async () => {
-    // Update UI to "stopping" state
     btnCapture.disabled = true;
     btnCaptureText.textContent = 'Guardando...';
     updateStatus(true, 'GUARDANDO ARCHIVOS...');
 
-    // Stop speech recognition
     sttEngine.stopListening();
-
-    // Stop recording and auto-download files
     await mediaEngine.stopAndExport();
-
-    // Stop all media
     mediaEngine.stopAll();
-
-    // Stop timer
     stopTimer();
 
-    // Reset video
     captureVideo.srcObject = null;
     captureVideo.classList.remove('active');
     capturePlaceholder.style.display = '';
 
-    // Reset UI
+    // Reset mute states
+    btnMuteMic.disabled = true;
+    btnMuteVideo.disabled = true;
+    btnMuteMic.classList.remove('muted');
+    btnMuteVideo.classList.remove('muted');
+    btnMuteMic.querySelector('i').className = 'fa-solid fa-microphone';
+    btnMuteVideo.querySelector('i').className = 'fa-solid fa-video';
+    btnMuteMic.querySelector('.control-label').textContent = 'Mic';
+    btnMuteVideo.querySelector('.control-label').textContent = 'Video';
+
     isActive = false;
+    isMicMuted = false;
+    isVideoMuted = false;
     btnCapture.disabled = false;
     btnCapture.classList.remove('btn-danger');
     btnCapture.classList.add('btn-primary');
@@ -205,51 +280,162 @@ document.addEventListener('DOMContentLoaded', () => {
     btnCapture.querySelector('i').className = 'fa-solid fa-circle-dot';
     sourceLabel.textContent = 'Fuente: Sin Conectar';
 
-    // Hide subtitles
     subtitlesOverlay.classList.remove('visible');
     subtitlesText.textContent = '';
 
     updateStatus(false, 'Listo');
+
+    addChatMessage('ai', '⏹️ Captura detenida. Los archivos de audio y video se han descargado automáticamente.');
   };
 
-  // Bind capture button
   btnCapture.addEventListener('click', startCapture);
   if (btnPlaceholderStart) btnPlaceholderStart.addEventListener('click', startCapture);
 
-  // ===== Copilot Controls =====
-  btnRefreshCopilot.addEventListener('click', () => {
-    const aiResults = aiEngine.processTranscript(sttEngine.transcriptHistory);
-    updateAIUI(aiResults);
-  });
+  // ===== AI CHAT =====
+  const sendChatMessage = (text) => {
+    if (!text || !text.trim()) return;
+    const message = text.trim();
 
-  // Custom prompt
-  const handleCustomPrompt = () => {
-    const query = customPromptInput.value.trim();
-    if (!query) return;
+    // Add user message to chat
+    addChatMessage('user', message);
 
-    const responseText = aiEngine.queryCustomCopilot(query, sttEngine.transcriptHistory);
-
-    const customCard = document.createElement('div');
-    customCard.className = 'suggestion-card card-direct';
-    customCard.innerHTML = `
-      <div class="card-tag"><i class="fa-solid fa-wand-magic-sparkles"></i> Respuesta del Copiloto</div>
-      <p class="suggestion-text">${responseText}</p>
-      <div class="card-actions">
-        <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
-      </div>
-    `;
-
-    suggestionsContainer.prepend(customCard);
-    bindCardButtons(customCard);
-    customPromptInput.value = '';
+    // Get AI response
+    const response = aiEngine.respondToChat(message, sttEngine.transcriptHistory);
+    
+    // Small delay for natural feel
+    setTimeout(() => {
+      addChatMessage('ai', response);
+    }, 300);
   };
 
-  btnSendCustomPrompt.addEventListener('click', handleCustomPrompt);
-  customPromptInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') handleCustomPrompt();
+  btnSendChat.addEventListener('click', () => {
+    sendChatMessage(aiChatInput.value);
+    aiChatInput.value = '';
   });
 
-  // Export Report
+  aiChatInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      sendChatMessage(aiChatInput.value);
+      aiChatInput.value = '';
+    }
+  });
+
+  // Chat tip click handlers (the initial tip buttons)
+  aiChatMessages.addEventListener('click', (e) => {
+    const tip = e.target.closest('.chat-tips li');
+    if (tip) {
+      sendChatMessage(tip.textContent);
+    }
+    // Copy button
+    const copyBtn = e.target.closest('.chat-copy-btn');
+    if (copyBtn) {
+      const bubble = copyBtn.closest('.chat-bubble');
+      if (bubble) {
+        const text = bubble.querySelector('p') ? 
+          Array.from(bubble.querySelectorAll('p')).map(p => p.textContent).join('\n') : 
+          bubble.textContent;
+        navigator.clipboard.writeText(text).catch(() => {});
+        copyBtn.innerHTML = '<i class="fa-solid fa-check"></i> Copiado';
+        setTimeout(() => {
+          copyBtn.innerHTML = '<i class="fa-regular fa-copy"></i> Copiar';
+        }, 2000);
+      }
+    }
+  });
+
+  // Clear chat
+  if (btnClearChat) {
+    btnClearChat.addEventListener('click', () => {
+      aiChatMessages.innerHTML = `
+        <div class="chat-msg chat-ai">
+          <div class="chat-avatar"><i class="fa-solid fa-robot"></i></div>
+          <div class="chat-bubble">
+            <p>Chat reiniciado. Sigo escuchando la reunión. ¿En qué puedo ayudarte?</p>
+          </div>
+        </div>
+      `;
+    });
+  }
+
+  // ===== VOICE-TO-CHAT =====
+  // User can press and hold the mic button to speak a question to the AI
+  // This uses a SEPARATE SpeechRecognition instance from the meeting transcription
+  const initVoiceChat = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      btnVoiceChat.style.display = 'none';
+      return;
+    }
+
+    voiceChatRecognition = new SpeechRecognition();
+    voiceChatRecognition.continuous = false;
+    voiceChatRecognition.interimResults = true;
+    voiceChatRecognition.lang = 'es-ES';
+
+    voiceChatRecognition.onresult = (event) => {
+      let finalText = '';
+      let interimText = '';
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalText += event.results[i][0].transcript;
+        } else {
+          interimText += event.results[i][0].transcript;
+        }
+      }
+
+      // Show interim in input
+      if (interimText) {
+        aiChatInput.value = interimText;
+      }
+
+      // Send final result
+      if (finalText.trim()) {
+        aiChatInput.value = '';
+        sendChatMessage(finalText.trim());
+      }
+    };
+
+    voiceChatRecognition.onend = () => {
+      isVoiceChatting = false;
+      btnVoiceChat.classList.remove('recording');
+      aiChatInput.placeholder = 'Escribe o habla al copiloto...';
+    };
+
+    voiceChatRecognition.onerror = (e) => {
+      console.warn('Voice chat error:', e.error);
+      isVoiceChatting = false;
+      btnVoiceChat.classList.remove('recording');
+      aiChatInput.placeholder = 'Escribe o habla al copiloto...';
+    };
+  };
+
+  initVoiceChat();
+
+  btnVoiceChat.addEventListener('click', () => {
+    if (!voiceChatRecognition) return;
+
+    if (isVoiceChatting) {
+      // Stop voice chat
+      voiceChatRecognition.stop();
+      isVoiceChatting = false;
+      btnVoiceChat.classList.remove('recording');
+      aiChatInput.placeholder = 'Escribe o habla al copiloto...';
+    } else {
+      // Start voice chat
+      try {
+        voiceChatRecognition.start();
+        isVoiceChatting = true;
+        btnVoiceChat.classList.add('recording');
+        aiChatInput.placeholder = '🎤 Escuchando tu pregunta...';
+        aiChatInput.value = '';
+      } catch (e) {
+        console.warn('Could not start voice chat:', e);
+      }
+    }
+  });
+
+  // ===== EXPORT REPORT =====
   btnExportReport.addEventListener('click', () => {
     const history = sttEngine.transcriptHistory;
 
@@ -295,7 +481,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ===== UI Update Functions =====
+  // ===== UI HELPER FUNCTIONS =====
   function updateStatus(isLive, label) {
     if (isLive) {
       liveStatusBadge.className = 'status-badge status-live';
@@ -343,96 +529,66 @@ document.addEventListener('DOMContentLoaded', () => {
     transcriptStream.appendChild(itemDiv);
     transcriptStream.scrollTop = transcriptStream.scrollHeight;
 
-    // Update count badge
     if (transcriptCount) {
       transcriptCount.textContent = sttEngine.transcriptHistory.length;
     }
   }
 
-  function updateAIUI(aiResults) {
-    // Update topic
-    currentTopicText.textContent = aiResults.topic;
-    if (analyticsCurrentTopic) analyticsCurrentTopic.textContent = aiResults.topic;
+  function addChatMessage(type, text) {
+    const msgDiv = document.createElement('div');
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    // Update sentiment
-    if (sentimentText) sentimentText.textContent = aiResults.sentiment;
+    // Convert **bold** markdown to <strong>
+    const formatted = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
 
-    // Update suggestion cards
-    suggestionsContainer.innerHTML = '';
-    aiResults.suggestions.forEach(sug => {
-      const card = document.createElement('div');
-      card.className = `suggestion-card card-${sug.type}`;
-      card.innerHTML = `
-        <div class="card-tag"><i class="fa-solid ${sug.icon}"></i> ${sug.title}</div>
-        <p class="suggestion-text">${sug.text}</p>
-        <div class="card-actions">
-          <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
-          <button class="btn-sm btn-speak"><i class="fa-solid fa-volume-high"></i> Escuchar</button>
+    if (type === 'user') {
+      msgDiv.className = 'chat-msg chat-user';
+      msgDiv.innerHTML = `
+        <div class="chat-avatar"><i class="fa-solid fa-user"></i></div>
+        <div class="chat-bubble">
+          <p>${formatted}</p>
+          <div class="chat-time">${time}</div>
         </div>
       `;
-      suggestionsContainer.appendChild(card);
-      bindCardButtons(card);
-    });
+    } else if (type === 'insight') {
+      msgDiv.className = 'chat-msg chat-insight';
+      msgDiv.innerHTML = `
+        <div class="chat-bubble">
+          <p>${formatted}</p>
+          <div class="chat-time">${time}</div>
+        </div>
+      `;
+    } else {
+      // AI message
+      msgDiv.className = 'chat-msg chat-ai';
+      msgDiv.innerHTML = `
+        <div class="chat-avatar"><i class="fa-solid fa-robot"></i></div>
+        <div class="chat-bubble">
+          <p>${formatted}</p>
+          <button class="chat-copy-btn"><i class="fa-regular fa-copy"></i> Copiar</button>
+          <div class="chat-time">${time}</div>
+        </div>
+      `;
+    }
 
-    // Update agreements & action items
-    if (aiResults.agreements && aiResults.agreements.length > 0 && agreementsList) {
-      agreementsList.innerHTML = aiResults.agreements.map(a =>
+    aiChatMessages.appendChild(msgDiv);
+    aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+  }
+
+  function updateMetaUI(aiMeta) {
+    if (currentTopicText) currentTopicText.textContent = aiMeta.topic;
+    if (analyticsCurrentTopic) analyticsCurrentTopic.textContent = aiMeta.topic;
+    if (sentimentText) sentimentText.textContent = aiMeta.sentiment;
+
+    if (aiMeta.agreements && aiMeta.agreements.length > 0 && agreementsList) {
+      agreementsList.innerHTML = aiMeta.agreements.map(a =>
         `<li><i class="fa-solid fa-check text-emerald"></i> ${a}</li>`
       ).join('');
     }
-    if (aiResults.actionItems && aiResults.actionItems.length > 0 && actionItemsList) {
-      actionItemsList.innerHTML = aiResults.actionItems.map(t =>
+    if (aiMeta.actionItems && aiMeta.actionItems.length > 0 && actionItemsList) {
+      actionItemsList.innerHTML = aiMeta.actionItems.map(t =>
         `<li><i class="fa-regular fa-square text-amber"></i> ${t}</li>`
       ).join('');
     }
   }
-
-  function bindCardButtons(card) {
-    const textEl = card.querySelector('.suggestion-text');
-    if (!textEl) return;
-    const text = textEl.textContent;
-
-    const btnCopy = card.querySelector('.btn-copy');
-    const btnSpeak = card.querySelector('.btn-speak');
-
-    if (btnCopy) {
-      btnCopy.addEventListener('click', () => {
-        const cleanText = text.replace(/^"|"$/g, '');
-        navigator.clipboard.writeText(cleanText).catch(() => {});
-        btnCopy.innerHTML = `<i class="fa-solid fa-check"></i> Copiado`;
-        setTimeout(() => {
-          btnCopy.innerHTML = `<i class="fa-regular fa-copy"></i> Copiar`;
-        }, 2000);
-      });
-    }
-
-    if (btnSpeak && 'speechSynthesis' in window) {
-      btnSpeak.addEventListener('click', () => {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text.replace(/^"|"$/g, ''));
-        utterance.lang = 'es-ES';
-        window.speechSynthesis.speak(utterance);
-      });
-    }
-  }
-
-  // Handle display stream ending (user stops screen share from browser UI)
-  // This ensures we clean up properly
-  const checkStreamEnded = () => {
-    if (isActive && mediaEngine.displayStream) {
-      const videoTracks = mediaEngine.displayStream.getVideoTracks();
-      videoTracks.forEach(track => {
-        track.onended = () => {
-          console.log('Screen share stopped by user');
-          stopCapture();
-        };
-      });
-    }
-  };
-
-  // Periodic check for stream health
-  const originalStart = startCapture;
-  // We'll add the stream ended listener after capture starts
-  const originalBtnHandler = btnCapture.onclick;
-
 });
