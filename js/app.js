@@ -1,6 +1,6 @@
 /**
  * ReuLive - Main Application Controller
- * Orchestrates MediaEngine, STTEngine, AIEngine, Gemini Settings, UI & Export.
+ * Orchestrates MediaEngine, STTEngine, AIEngine, Mobile & Desktop Navigation.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -17,9 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const timerText = document.getElementById('timerText');
   const btnConnectZoom = document.getElementById('btnConnectZoom');
   const btnMainConnect = document.getElementById('btnMainConnect');
-  const btnConfigGemini = document.getElementById('btnConfigGemini');
   const btnExportReport = document.getElementById('btnExportReport');
-  const aiModelText = document.getElementById('aiModelText');
 
   // Elements - Viewport
   const remoteVideo = document.getElementById('remoteVideo');
@@ -36,13 +34,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnToggleVideo = document.getElementById('btnToggleVideo');
   const btnToggleAudio = document.getElementById('btnToggleAudio');
 
+  // Mobile Navigation
+  const mobileNavItems = document.querySelectorAll('.nav-item');
+  const mediaSection = document.getElementById('mediaSection');
+  const copilotSection = document.getElementById('copilotSection');
+
   // Elements - Copilot & Tabs
   const tabBtns = document.querySelectorAll('.tab-btn');
   const tabContents = document.querySelectorAll('.tab-content');
   const suggestionsContainer = document.getElementById('suggestionsContainer');
   const transcriptStream = document.getElementById('transcriptStream');
   const btnClearTranscript = document.getElementById('btnClearTranscript');
-  const btnAutoScroll = document.getElementById('btnAutoScroll');
   const btnRefreshCopilot = document.getElementById('btnRefreshCopilot');
   const topicTimelineList = document.getElementById('topicTimelineList');
   const agreementsList = document.getElementById('agreementsList');
@@ -53,12 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Elements - Modals
   const modalConnection = document.getElementById('modalConnection');
-  const modalGeminiKey = document.getElementById('modalGeminiKey');
   const btnCloseModalConnect = document.getElementById('btnCloseModalConnect');
-  const btnCloseModalGemini = document.getElementById('btnCloseModalGemini');
-  const geminiApiKeyInput = document.getElementById('geminiApiKeyInput');
-  const btnSaveGeminiKey = document.getElementById('btnSaveGeminiKey');
-
   const optScreenAudio = document.getElementById('optScreenAudio');
   const optMicOnly = document.getElementById('optMicOnly');
 
@@ -66,12 +63,6 @@ document.addEventListener('DOMContentLoaded', () => {
   let timerInterval = null;
   let timerSeconds = 0;
   let isAutoScroll = true;
-
-  // Init Gemini Key State
-  if (aiEngine.getApiKey()) {
-    geminiApiKeyInput.value = aiEngine.getApiKey();
-    aiModelText.textContent = 'Gemini 1.5 Flash (Activo)';
-  }
 
   // Initialize Canvas Visualizer
   mediaEngine.initCanvas(audioCanvas);
@@ -90,7 +81,6 @@ document.addEventListener('DOMContentLoaded', () => {
   sttEngine.onTranscriptChunk = async (chunk) => {
     appendTranscriptItem(chunk);
 
-    // Process AI Topic & Copilot Suggestions asynchronously
     const aiResults = await aiEngine.processTranscript(sttEngine.transcriptHistory);
     updateAIUI(aiResults);
   };
@@ -100,29 +90,13 @@ document.addEventListener('DOMContentLoaded', () => {
   btnConnectZoom.addEventListener('click', openConnectModal);
   if (btnMainConnect) btnMainConnect.addEventListener('click', openConnectModal);
 
-  btnConfigGemini.addEventListener('click', () => {
-    modalGeminiKey.style.display = 'flex';
-  });
-
   btnCloseModalConnect.addEventListener('click', () => { modalConnection.style.display = 'none'; });
-  btnCloseModalGemini.addEventListener('click', () => { modalGeminiKey.style.display = 'none'; });
 
-  [modalConnection, modalGeminiKey].forEach(modal => {
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) modal.style.display = 'none';
-    });
+  modalConnection.addEventListener('click', (e) => {
+    if (e.target === modalConnection) modalConnection.style.display = 'none';
   });
 
-  // Save Gemini Key
-  btnSaveGeminiKey.addEventListener('click', () => {
-    const key = geminiApiKeyInput.value.trim();
-    aiEngine.setApiKey(key);
-    modalGeminiKey.style.display = 'none';
-    aiModelText.textContent = key ? 'Gemini 1.5 Flash (Activo)' : 'Gemini (Falta API Key)';
-    alert(key ? '¡API Key de Google Gemini activada con éxito!' : 'Clave removida.');
-  });
-
-  // Screen + Audio Capture (Zoom)
+  // Screen + Audio Capture (Zoom / Desktop)
   optScreenAudio.addEventListener('click', async () => {
     modalConnection.style.display = 'none';
     try {
@@ -135,7 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btnToggleVideo.disabled = false;
       }
 
-      sourceLabel.textContent = 'Fuente: Zoom / Pantalla con Audio del Sistema';
+      sourceLabel.textContent = 'Fuente: Zoom / Pantalla con Audio';
       btnToggleAudio.disabled = false;
       btnStartRecord.disabled = false;
       btnExportReport.disabled = false;
@@ -145,11 +119,11 @@ document.addEventListener('DOMContentLoaded', () => {
       startTimer();
 
     } catch (err) {
-      alert('Permiso de captura de pantalla/audio de Zoom denegado o cancelado.');
+      alert('Permiso de captura de pantalla/audio denegado.');
     }
   });
 
-  // Mic Only Capture
+  // Mic Only Capture (Smartphone / Mobile Friendly)
   optMicOnly.addEventListener('click', async () => {
     modalConnection.style.display = 'none';
     try {
@@ -160,15 +134,42 @@ document.addEventListener('DOMContentLoaded', () => {
       btnStartRecord.disabled = false;
       btnExportReport.disabled = false;
 
-      updateStatus(true, 'EN VIVO - MICRÓFONO');
+      updateStatus(true, 'EN VIVO - MIC');
       sttEngine.startListening();
       startTimer();
     } catch (err) {
-      alert('No se pudo acceder al micrófono del dispositivo.');
+      alert('No se pudo acceder al micrófono.');
     }
   });
 
-  // Tab Navigation
+  // Mobile Bottom Nav Switching
+  mobileNavItems.forEach(item => {
+    item.addEventListener('click', () => {
+      const target = item.getAttribute('data-target');
+
+      mobileNavItems.forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+
+      if (target === 'mediaSection') {
+        mediaSection.style.display = 'flex';
+        copilotSection.style.display = 'none';
+      } else {
+        mediaSection.style.display = 'none';
+        copilotSection.style.display = 'flex';
+
+        // Switch internal tab inside copilot card
+        tabBtns.forEach(b => b.classList.remove('active'));
+        tabContents.forEach(c => c.classList.remove('active'));
+
+        const activeTabBtn = document.querySelector(`.tab-btn[data-tab="${target}"]`);
+        if (activeTabBtn) activeTabBtn.classList.add('active');
+        const activeTabContent = document.getElementById(target);
+        if (activeTabContent) activeTabContent.classList.add('active');
+      }
+    });
+  });
+
+  // Desktop Tab Navigation
   tabBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       const targetTab = btn.getAttribute('data-tab');
@@ -219,7 +220,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const customCard = document.createElement('div');
     customCard.className = 'suggestion-card card-direct';
     customCard.innerHTML = `
-      <div class="card-tag"><i class="fa-solid fa-wand-magic-sparkles"></i> Respuesta de Gemini AI</div>
+      <div class="card-tag"><i class="fa-solid fa-wand-magic-sparkles"></i> Respuesta del Copiloto</div>
       <p class="suggestion-text">${responseText}</p>
       <div class="card-actions">
         <button class="btn-sm btn-copy"><i class="fa-regular fa-copy"></i> Copiar</button>
@@ -284,7 +285,7 @@ document.addEventListener('DOMContentLoaded', () => {
       statusText.textContent = label || 'GRABANDO EN VIVO';
     } else {
       liveStatusBadge.className = 'status-badge status-offline';
-      statusText.textContent = 'Listo para conectar';
+      statusText.textContent = 'Listo';
     }
   }
 
@@ -357,7 +358,7 @@ document.addEventListener('DOMContentLoaded', () => {
       btnCopy.addEventListener('click', () => {
         const cleanText = text.replace(/^"|"$/g, '');
         navigator.clipboard.writeText(cleanText);
-        btnCopy.innerHTML = `<i class="fa-solid fa-check"></i> ¡Copiado!`;
+        btnCopy.innerHTML = `<i class="fa-solid fa-check"></i> Copiado`;
         setTimeout(() => {
           btnCopy.innerHTML = `<i class="fa-regular fa-copy"></i> Copiar`;
         }, 2000);
