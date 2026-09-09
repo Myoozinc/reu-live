@@ -578,8 +578,21 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   btnCapture.addEventListener('click', startCapture);
-  if (btnPlaceholderStart) btnPlaceholderStart.addEventListener('click', startCapture);
   if (btnLobbyStart) btnLobbyStart.addEventListener('click', startCapture);
+
+  // Accordion behavior for lobby feature cards
+  const lobbyFeatureCards = document.querySelectorAll('.lobby-feature-card');
+  lobbyFeatureCards.forEach(card => {
+    card.addEventListener('toggle', () => {
+      if (card.open) {
+        lobbyFeatureCards.forEach(otherCard => {
+          if (otherCard !== card && otherCard.open) {
+            otherCard.open = false;
+          }
+        });
+      }
+    });
+  });
 
   // ===== USER CALL HISTORY MODAL =====
   const openHistoryModal = async () => {
@@ -734,8 +747,8 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
 
       <div class="pdf-footer">
-        <span>Reu.live AI Copilot — Documento oficial y confidencial de reunión</span>
-        <span>Generado el ${new Date().toLocaleString()}</span>
+        <span>Reu.live — Asistente de Reuniones • Powered by MYOOZlabs</span>
+        <span>Documento oficial y confidencial • Generado el ${new Date().toLocaleString()}</span>
       </div>
     `;
 

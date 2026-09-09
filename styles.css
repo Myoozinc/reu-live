@@ -239,14 +239,15 @@ body {
   font-size: 1.15rem;
   font-weight: 800;
   letter-spacing: -0.4px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
   color: var(--text-main);
+  line-height: 1.2;
+  display: block;
 }
 
 .brand-dot {
   color: var(--brand-blue);
+  display: inline;
+  font-weight: 800;
 }
 
 .logo-text .subtitle {
@@ -493,50 +494,7 @@ body {
   color: var(--text-muted);
   max-width: 580px;
   line-height: 1.6;
-  margin-bottom: 36px;
-}
-
-/* 3D Clay Breathing Graphic */
-.lobby-orb-container {
-  position: relative;
-  width: 140px;
-  height: 140px;
-  margin: 0 auto 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.lobby-orb {
-  width: 88px;
-  height: 88px;
-  border-radius: 24px;
-  background: var(--brand-gradient);
-  border: 2px solid rgba(255, 255, 255, 0.35);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 12px 36px var(--brand-blue-glow);
-  animation: zenOrbFloat 4s ease-in-out infinite;
-  overflow: hidden;
-}
-
-.lobby-logo-3d {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 22px;
-}
-
-.lobby-ripple {
-  position: absolute;
-  inset: -10px;
-  border-radius: 36px;
-  border: 1.5px solid var(--brand-blue-border);
-  animation: zenRipple 3s ease-out infinite;
-}
-.lobby-ripple:nth-child(2) {
-  animation-delay: 1.5s;
+  margin-bottom: 28px;
 }
 
 .lobby-cta-group {
@@ -544,7 +502,7 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  margin-bottom: 44px;
+  margin-bottom: 38px;
 }
 
 .btn-lobby-start {
@@ -560,38 +518,71 @@ body {
   color: var(--text-dim);
 }
 
-/* Feature Pills Grid */
+/* Feature Pills Grid (Collapsible on click) */
 .lobby-features-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
   width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  align-items: start;
 }
 
 .lobby-feature-card {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  padding: 20px 18px;
-  text-align: left;
+  padding: 12px 14px;
   box-shadow: var(--card-shadow);
-  transition: var(--trans-smooth);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  overflow: hidden;
+  user-select: none;
 }
+
 .lobby-feature-card:hover {
   transform: translateY(-2px);
-  border-color: var(--border-hover);
-  box-shadow: var(--card-shadow-hover);
+  border-color: var(--brand-blue-border);
+  box-shadow: 0 6px 20px var(--brand-blue-glow);
+}
+
+.lobby-feature-card[open] {
+  border-color: var(--brand-blue-border);
+  box-shadow: 0 8px 24px var(--brand-blue-glow);
+  padding: 14px 16px 18px;
+}
+
+.feature-summary {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  outline: none;
+}
+
+.feature-summary::-webkit-details-marker,
+.feature-summary::marker {
+  display: none;
 }
 
 .feature-icon {
-  width: 36px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1rem;
-  margin-bottom: 12px;
+  font-size: 1.15rem;
+  margin: 0 auto;
+  transition: transform 0.2s ease;
+}
+
+.lobby-feature-card:hover .feature-icon {
+  transform: scale(1.06);
 }
 
 .icon-sage {
@@ -607,17 +598,49 @@ body {
   color: var(--accent-sky);
 }
 
-.lobby-feature-card h4 {
-  font-size: 0.95rem;
+.feature-expand-hint {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  transition: transform 0.25s ease, color 0.2s ease;
+  line-height: 1;
+}
+
+.lobby-feature-card[open] .feature-expand-hint {
+  transform: rotate(180deg);
+  color: var(--brand-blue);
+}
+
+.feature-details-body {
+  padding-top: 14px;
+  margin-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+  text-align: left;
+  animation: featureFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.feature-details-body h4 {
+  font-size: 0.92rem;
   font-weight: 700;
   color: var(--text-main);
   margin-bottom: 6px;
 }
 
-.lobby-feature-card p {
-  font-size: 0.82rem;
+.feature-details-body p {
+  font-size: 0.8rem;
   color: var(--text-muted);
-  line-height: 1.5;
+  line-height: 1.45;
+  margin: 0;
+}
+
+@keyframes featureFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ==========================================
@@ -2531,6 +2554,43 @@ summary.deep-item-summary::-webkit-details-marker {
   font-style: italic;
   color: var(--text-main);
   line-height: 1.4;
+}
+
+/* ===================================================
+   POWERED BY MYOOZLABS GLOBAL FOOTER
+   =================================================== */
+.app-page-footer,
+.admin-page-footer {
+  padding: 16px 20px;
+  text-align: center;
+  margin-top: auto;
+  flex-shrink: 0;
+}
+
+.admin-card-footer {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+  text-align: center;
+}
+
+.powered-by {
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--text-dim);
+  letter-spacing: 0.3px;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  user-select: none;
+}
+
+.powered-by strong {
+  color: var(--brand-blue);
+  font-weight: 700;
+  letter-spacing: 0.5px;
 }
 
 /* ===================================================

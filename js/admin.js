@@ -625,8 +625,8 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
 
       <div class="pdf-footer">
-        <span>Reu.live AI Copilot — Documento oficial y confidencial de reunión</span>
-        <span>Generado el ${new Date().toLocaleString()}</span>
+        <span>Reu.live — Asistente de Reuniones • Powered by MYOOZlabs</span>
+        <span>Documento oficial y confidencial • Generado el ${new Date().toLocaleString()}</span>
       </div>
     `;
 

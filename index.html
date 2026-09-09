@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Reu.live AI | Copiloto & Grabador de Reuniones en Tiempo Real</title>
+  <title>Reu.live | Asistente & Grabador de Reuniones en Tiempo Real</title>
   <meta name="description" content="Graba reuniones de Zoom en tiempo real, transcribe automáticamente, extrae el tema principal y genera respuestas con IA.">
   <link rel="icon" type="image/jpeg" href="assets/logo.jpg">
   <link rel="apple-touch-icon" href="assets/logo.jpg">
@@ -25,8 +25,8 @@
           <img src="assets/logo.jpg" alt="Reu.live" class="brand-icon-img">
         </div>
         <div class="logo-text">
-          <h1>Reu<span class="brand-dot">.</span>live <span class="badge-ai"><i class="fa-solid fa-sparkles"></i> AI</span></h1>
-          <p class="subtitle">Copiloto en Tiempo Real</p>
+          <h1>Reu<span class="brand-dot">.</span>live</h1>
+          <p class="subtitle">Asistente en Tiempo Real</p>
         </div>
       </div>
 
@@ -70,18 +70,10 @@
     <!-- ===== Zen Welcome Lobby (Visible before meeting starts) ===== -->
     <div class="zen-lobby" id="zenLobby">
       <div class="lobby-hero-badge">
-        <i class="fa-solid fa-sparkles"></i> Copiloto Inteligente & Discreto
+        <i class="fa-solid fa-sparkles"></i> Asistente Inteligente & Discreto
       </div>
       <h2 class="lobby-title">Claridad & Presencia en tus Reuniones</h2>
-      <p class="lobby-desc">Graba, transcribe y recibe sugerencias estratégicas en tiempo real sin distracciones ni estrés. Tu copiloto profesional en un espacio zen.</p>
-
-      <div class="lobby-orb-container">
-        <div class="lobby-ripple"></div>
-        <div class="lobby-ripple"></div>
-        <div class="lobby-orb">
-          <img src="assets/logo.jpg" alt="Reu.live Logo" class="lobby-logo-3d">
-        </div>
-      </div>
+      <p class="lobby-desc">Graba, transcribe y recibe sugerencias estratégicas en tiempo real sin distracciones ni estrés. Tu asistente profesional en un espacio zen.</p>
 
       <div class="lobby-cta-group">
         <div class="lobby-btn-row">
@@ -96,27 +88,44 @@
       </div>
 
       <div class="lobby-features-grid">
-        <div class="lobby-feature-card">
-          <div class="feature-icon icon-sage">
-            <i class="fa-solid fa-shield-halved"></i>
+        <details class="lobby-feature-card" name="lobby-feature">
+          <summary class="feature-summary" title="Click para ver información">
+            <div class="feature-icon icon-sage">
+              <i class="fa-solid fa-shield-halved"></i>
+            </div>
+            <span class="feature-expand-hint"><i class="fa-solid fa-chevron-down"></i></span>
+          </summary>
+          <div class="feature-details-body">
+            <h4>100% Privado & Seguro</h4>
+            <p>Tus audios y grabaciones se procesan en tu dispositivo. Exporta en WAV y video localmente.</p>
           </div>
-          <h4>100% Privado & Seguro</h4>
-          <p>Tus audios y grabaciones se procesan en tu dispositivo. Exporta en WAV y video localmente.</p>
-        </div>
-        <div class="lobby-feature-card">
-          <div class="feature-icon icon-lavender">
-            <i class="fa-solid fa-brain"></i>
+        </details>
+
+        <details class="lobby-feature-card" name="lobby-feature">
+          <summary class="feature-summary" title="Click para ver información">
+            <div class="feature-icon icon-lavender">
+              <i class="fa-solid fa-brain"></i>
+            </div>
+            <span class="feature-expand-hint"><i class="fa-solid fa-chevron-down"></i></span>
+          </summary>
+          <div class="feature-details-body">
+            <h4>Asistente Estratégico</h4>
+            <p>Detecta el contexto y ofrece respuestas inmediatas, propuestas y preguntas para guiar la conversación.</p>
           </div>
-          <h4>Copiloto Estratégico</h4>
-          <p>Detecta el contexto y ofrece respuestas inmediatas, propuestas y preguntas para guiar la conversación.</p>
-        </div>
-        <div class="lobby-feature-card">
-          <div class="feature-icon icon-sky">
-            <i class="fa-solid fa-closed-captioning"></i>
+        </details>
+
+        <details class="lobby-feature-card" name="lobby-feature">
+          <summary class="feature-summary" title="Click para ver información">
+            <div class="feature-icon icon-sky">
+              <i class="fa-solid fa-closed-captioning"></i>
+            </div>
+            <span class="feature-expand-hint"><i class="fa-solid fa-chevron-down"></i></span>
+          </summary>
+          <div class="feature-details-body">
+            <h4>Transcripción Clara</h4>
+            <p>Subtítulos en tiempo real con separación de interlocutores y extracción automática de acuerdos.</p>
           </div>
-          <h4>Transcripción Clara</h4>
-          <p>Subtítulos en tiempo real con separación de interlocutores y extracción automática de acuerdos.</p>
-        </div>
+        </details>
       </div>
     </div>
 
@@ -209,7 +218,7 @@
         <!-- Copilot Header with Speaker Switch -->
         <div class="copilot-header">
           <div class="copilot-title">
-            <h3><i class="fa-solid fa-sparkles text-cyan"></i> Copiloto en Vivo</h3>
+            <h3><i class="fa-solid fa-sparkles text-cyan"></i> Asistente en Vivo</h3>
             <p class="copilot-subtitle" id="copilotSubtitle">Analizando reunión en tiempo real</p>
           </div>
           <div class="copilot-header-actions">
@@ -371,10 +380,10 @@
         <!-- Chat Input Bar with Voice Button -->
         <div class="copilot-input-bar">
           <div class="input-wrapper">
-            <button id="btnVoiceChat" class="btn-voice" title="Hablar al copiloto (mantén presionado)">
+            <button id="btnVoiceChat" class="btn-voice" title="Hablar al asistente (mantén presionado)">
               <i class="fa-solid fa-microphone"></i>
             </button>
-            <input type="text" id="aiChatInput" placeholder="Escribe o habla al copiloto...">
+            <input type="text" id="aiChatInput" placeholder="Escribe o habla al asistente...">
             <button id="btnSendChat" class="btn-send" title="Enviar">
               <i class="fa-solid fa-paper-plane"></i>
             </button>
@@ -385,6 +394,11 @@
     </section>
 
   </main>
+
+  <!-- ===== Global Page Footer ===== -->
+  <footer class="app-page-footer">
+    <p class="powered-by">Powered by <strong>MYOOZlabs</strong></p>
+  </footer>
 
   <!-- ===== User Call History Modal ===== -->
   <div class="user-history-modal is-hidden" id="userHistoryModal">
