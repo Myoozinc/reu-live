@@ -26,6 +26,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnCapture = document.getElementById('btnCapture');
   const btnCaptureText = document.getElementById('btnCaptureText');
   const btnExportReport = document.getElementById('btnExportReport');
+  const btnThemeToggle = document.getElementById('btnThemeToggle');
+
+  // Zen Lobby & Workspace Containers
+  const zenLobby = document.getElementById('zenLobby');
+  const workspaceSection = document.getElementById('workspaceSection');
+  const btnLobbyStart = document.getElementById('btnLobbyStart');
 
   // Capture Section
   const captureVideo = document.getElementById('captureVideo');
@@ -73,6 +79,35 @@ document.addEventListener('DOMContentLoaded', () => {
   const analyticsCurrentTopic = document.getElementById('analyticsCurrentTopic');
   const agreementsList = document.getElementById('agreementsList');
   const actionItemsList = document.getElementById('actionItemsList');
+
+  // ===== Theme Management (Light / Dark Mode) =====
+  const initTheme = () => {
+    const savedTheme = localStorage.getItem('reulive-theme');
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const initialTheme = savedTheme || (prefersDark ? 'dark' : 'light');
+    applyTheme(initialTheme);
+  };
+
+  const applyTheme = (theme) => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('reulive-theme', theme);
+    if (btnThemeToggle) {
+      const icon = btnThemeToggle.querySelector('i');
+      if (icon) {
+        icon.className = theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+      }
+    }
+  };
+
+  if (btnThemeToggle) {
+    btnThemeToggle.addEventListener('click', () => {
+      const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      applyTheme(newTheme);
+    });
+  }
+
+  initTheme();
 
   // ===== Initialize =====
   mediaEngine.initCanvas(audioCanvas);
@@ -268,16 +303,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const result = await mediaEngine.startUnifiedCapture();
 
-      // Show video
+      // Switch view: hide Zen Lobby, show Active Workspace
+      if (zenLobby) zenLobby.classList.add('is-hidden');
+      if (workspaceSection) workspaceSection.classList.remove('is-hidden');
+
+      // Show video or serene audio state
       if (result.hasVideo) {
         const videoStream = mediaEngine.getVideoStream();
         if (videoStream) {
           captureVideo.srcObject = videoStream;
           captureVideo.classList.add('active');
         }
-        capturePlaceholder.style.display = 'none';
+        if (capturePlaceholder) capturePlaceholder.style.display = 'none';
       } else {
-        capturePlaceholder.style.display = 'none';
+        if (capturePlaceholder) {
+          capturePlaceholder.style.display = 'flex';
+          capturePlaceholder.innerHTML = `
+            <div class="placeholder-icon" style="animation: zenBreathe 3s infinite ease-in-out;">
+              <i class="fa-solid fa-microphone-lines text-sage"></i>
+            </div>
+            <h3>Audio en Vivo Activo</h3>
+            <p>Transcribiendo y analizando la reunión en segundo plano.</p>
+          `;
+        }
       }
 
       sourceLabel.textContent = `Fuente: ${result.sourceLabel || 'Micrófono'}`;
@@ -320,6 +368,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     } catch (err) {
       console.error('Capture error:', err);
+      if (workspaceSection) workspaceSection.classList.add('is-hidden');
+      if (zenLobby) zenLobby.classList.remove('is-hidden');
       btnCapture.disabled = false;
       btnCaptureText.textContent = 'Iniciar Captura';
       updateStatus(false, 'Error');
@@ -339,7 +389,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     captureVideo.srcObject = null;
     captureVideo.classList.remove('active');
-    capturePlaceholder.style.display = '';
+
+    // Switch view: hide Active Workspace, return smoothly to Zen Lobby
+    if (workspaceSection) workspaceSection.classList.add('is-hidden');
+    if (zenLobby) zenLobby.classList.remove('is-hidden');
+
+    if (capturePlaceholder) {
+      capturePlaceholder.style.display = '';
+      capturePlaceholder.innerHTML = `
+        <div class="placeholder-icon">
+          <i class="fa-solid fa-headset"></i>
+        </div>
+        <h3>Captura tu Reunión</h3>
+        <p>Presiona <strong>"Iniciar Captura"</strong> para grabar pantalla, audio, y transcribir automáticamente.</p>
+        <button class="btn btn-primary glow-btn" id="btnPlaceholderStart">
+          <i class="fa-solid fa-circle-dot"></i> Iniciar Captura Ahora
+        </button>
+      `;
+      const pStart = document.getElementById('btnPlaceholderStart');
+      if (pStart) pStart.addEventListener('click', startCapture);
+    }
 
     // Reset mute states
     btnMuteMic.disabled = true;
@@ -369,6 +438,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   btnCapture.addEventListener('click', startCapture);
   if (btnPlaceholderStart) btnPlaceholderStart.addEventListener('click', startCapture);
+  if (btnLobbyStart) btnLobbyStart.addEventListener('click', startCapture);
 
   // ===== QUICK ASK / CUSTOM QUERY =====
   const sendCustomQuery = async (text) => {

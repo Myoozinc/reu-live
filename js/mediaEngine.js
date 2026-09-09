@@ -230,17 +230,41 @@ class MediaEngine {
       const avgVolume = Math.round((sum / bufferLength / 255) * 100);
       if (this.onVolumeChange) this.onVolumeChange(avgVolume);
 
-      const barWidth = (width / bufferLength) * 2;
-      let x = 0;
-      for (let i = 0; i < bufferLength; i++) {
-        const barHeight = (dataArray[i] / 255) * height * 0.9;
-        const gradient = this.canvasCtx.createLinearGradient(0, height, 0, height - barHeight);
-        gradient.addColorStop(0, 'rgba(0, 240, 255, 0.15)');
-        gradient.addColorStop(0.5, 'rgba(112, 0, 255, 0.7)');
-        gradient.addColorStop(1, '#ff007a');
+      // Serene Zen Pastel Visualizer
+      const barsToDraw = 42;
+      const step = Math.floor(bufferLength / barsToDraw) || 1;
+      const totalSpacing = 4;
+      const barWidth = Math.max(3, (width - (barsToDraw * totalSpacing)) / barsToDraw);
+
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+
+      for (let i = 0; i < barsToDraw; i++) {
+        const val = dataArray[i * step] || 0;
+        const barHeight = Math.max(2, (val / 255) * (height - 8));
+        const x = i * (barWidth + totalSpacing) + totalSpacing / 2;
+        const y = height - barHeight - 2;
+
+        const gradient = this.canvasCtx.createLinearGradient(0, height, 0, y);
+        if (isDark) {
+          gradient.addColorStop(0, 'rgba(120, 181, 143, 0.12)'); // Sage
+          gradient.addColorStop(0.5, 'rgba(107, 176, 224, 0.55)'); // Misty sky
+          gradient.addColorStop(1, 'rgba(158, 146, 212, 0.85)'); // Lavender
+        } else {
+          gradient.addColorStop(0, 'rgba(78, 128, 97, 0.08)');  // Soft sage
+          gradient.addColorStop(0.5, 'rgba(59, 119, 166, 0.4)'); // Sky
+          gradient.addColorStop(1, 'rgba(114, 101, 168, 0.7)'); // Lavender
+        }
+
         this.canvasCtx.fillStyle = gradient;
-        this.canvasCtx.fillRect(x, height - barHeight, barWidth - 2, barHeight);
-        x += barWidth;
+
+        if (this.canvasCtx.roundRect) {
+          this.canvasCtx.beginPath();
+          const r = Math.min(barWidth / 2, 4);
+          this.canvasCtx.roundRect(x, y, barWidth, barHeight, [r, r, 0, 0]);
+          this.canvasCtx.fill();
+        } else {
+          this.canvasCtx.fillRect(x, y, barWidth, barHeight);
+        }
       }
     };
     draw();

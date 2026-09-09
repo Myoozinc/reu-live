@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -11,53 +11,106 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="styles.css">
 </head>
-<body class="dark-theme">
+<body class="zen-theme">
 
-  <!-- ===== Header Bar ===== -->
-  <header class="app-header">
-    <div class="logo-group">
-      <div class="logo-icon">
-        <i class="fa-solid fa-waveform-lines"></i>
+  <div class="app-container">
+
+    <!-- ===== Header Bar ===== -->
+    <header class="app-header">
+      <div class="logo-group">
+        <div class="logo-icon">
+          <i class="fa-solid fa-waveform-lines"></i>
+        </div>
+        <div class="logo-text">
+          <h1>ReuLive <span class="badge-ai"><i class="fa-solid fa-sparkles"></i> AI</span></h1>
+          <p class="subtitle">Copiloto en Tiempo Real</p>
+        </div>
       </div>
-      <div class="logo-text">
-        <h1>ReuLive <span class="badge-ai"><i class="fa-solid fa-sparkles"></i> AI</span></h1>
-        <p class="subtitle">Copiloto en Tiempo Real</p>
+
+      <div class="status-center">
+        <div id="liveStatusBadge" class="status-badge status-offline">
+          <span class="status-dot"></span>
+          <span id="statusText">Listo</span>
+        </div>
+        <div class="main-topic-pill" id="mainTopicPill">
+          <i class="fa-solid fa-compass-drafting text-cyan"></i>
+          <span class="topic-label">Tema:</span>
+          <strong id="currentTopicText">En espera de audio...</strong>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <div class="timer-display" id="meetingTimer">
+          <i class="fa-regular fa-clock"></i>
+          <span id="timerText">00:00</span>
+        </div>
+        <button id="btnThemeToggle" class="btn-theme-toggle" title="Cambiar tema (Claro / Oscuro)" aria-label="Cambiar tema">
+          <i class="fa-solid fa-moon"></i>
+        </button>
+        <button id="btnCapture" class="btn btn-primary glow-btn">
+          <i class="fa-solid fa-circle-dot"></i>
+          <span id="btnCaptureText">Iniciar Captura</span>
+        </button>
+        <button id="btnExportReport" class="btn btn-outline" disabled title="Exportar Informe">
+          <i class="fa-solid fa-file-export"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- ===== Zen Welcome Lobby (Visible before meeting starts) ===== -->
+    <div class="zen-lobby" id="zenLobby">
+      <div class="lobby-hero-badge">
+        <i class="fa-solid fa-sparkles"></i> Copiloto Inteligente & Discreto
+      </div>
+      <h2 class="lobby-title">Claridad & Presencia en tus Reuniones</h2>
+      <p class="lobby-desc">Graba, transcribe y recibe sugerencias estratégicas en tiempo real sin distracciones ni estrés. Tu copiloto profesional en un espacio zen.</p>
+
+      <div class="lobby-orb-container">
+        <div class="lobby-ripple"></div>
+        <div class="lobby-ripple"></div>
+        <div class="lobby-orb">
+          <i class="fa-solid fa-feather-pointed"></i>
+        </div>
+      </div>
+
+      <div class="lobby-cta-group">
+        <button class="btn btn-primary glow-btn btn-lobby-start" id="btnLobbyStart">
+          <i class="fa-solid fa-circle-dot"></i> Iniciar Reunión Ahora
+        </button>
+        <span class="lobby-hint"><i class="fa-regular fa-circle-check"></i> Compatible con Zoom, Google Meet, Teams y presencial</span>
+      </div>
+
+      <div class="lobby-features-grid">
+        <div class="lobby-feature-card">
+          <div class="feature-icon icon-sage">
+            <i class="fa-solid fa-shield-halved"></i>
+          </div>
+          <h4>100% Privado & Seguro</h4>
+          <p>Tus audios y grabaciones se procesan en tu dispositivo. Exporta en WAV y video localmente.</p>
+        </div>
+        <div class="lobby-feature-card">
+          <div class="feature-icon icon-lavender">
+            <i class="fa-solid fa-brain"></i>
+          </div>
+          <h4>Copiloto Estratégico</h4>
+          <p>Detecta el contexto y ofrece respuestas inmediatas, propuestas y preguntas para guiar la conversación.</p>
+        </div>
+        <div class="lobby-feature-card">
+          <div class="feature-icon icon-sky">
+            <i class="fa-solid fa-closed-captioning"></i>
+          </div>
+          <h4>Transcripción Clara</h4>
+          <p>Subtítulos en tiempo real con separación de interlocutores y extracción automática de acuerdos.</p>
+        </div>
       </div>
     </div>
 
-    <div class="status-center">
-      <div id="liveStatusBadge" class="status-badge status-offline">
-        <span class="status-dot"></span>
-        <span id="statusText">Listo</span>
-      </div>
-      <div class="main-topic-pill" id="mainTopicPill">
-        <i class="fa-solid fa-compass-drafting text-cyan"></i>
-        <span class="topic-label">Tema:</span>
-        <strong id="currentTopicText">En espera de audio...</strong>
-      </div>
-    </div>
+    <!-- ===== Main Unified Workspace (Active during meeting) ===== -->
+    <main class="app-unified is-hidden" id="workspaceSection">
 
-    <div class="header-actions">
-      <div class="timer-display" id="meetingTimer">
-        <i class="fa-regular fa-clock"></i>
-        <span id="timerText">00:00</span>
-      </div>
-      <button id="btnCapture" class="btn btn-primary glow-btn">
-        <i class="fa-solid fa-circle-dot"></i>
-        <span id="btnCaptureText">Iniciar Captura</span>
-      </button>
-      <button id="btnExportReport" class="btn btn-outline" disabled title="Exportar Informe">
-        <i class="fa-solid fa-file-export"></i>
-      </button>
-    </div>
-  </header>
-
-  <!-- ===== Main Unified Layout ===== -->
-  <main class="app-unified">
-
-    <!-- === Capture Section === -->
-    <section class="capture-section" id="captureSection">
-      <div class="capture-viewport glass-panel">
+      <!-- === Capture Section === -->
+      <section class="capture-section" id="captureSection">
+        <div class="capture-viewport glass-panel">
 
         <div class="viewport-header">
           <div class="viewport-title">
@@ -279,6 +332,8 @@
     </section>
 
   </main>
+
+  </div> <!-- /.app-container -->
 
   <script src="js/mediaEngine.js"></script>
   <script src="js/sttEngine.js"></script>
