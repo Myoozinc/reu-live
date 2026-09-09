@@ -293,116 +293,77 @@ class AIEngine {
   }
 
   /**
-   * Generate a smart response suggestion
+   * Generate a smart response suggestion based on the last spoken chunk
    */
   generateResponseSuggestion(lastChunk, recentText, topic) {
-    if (!lastChunk) return 'Aún no hay suficiente contexto para sugerir una respuesta.';
-
-    const text = lastChunk.text.toLowerCase();
-    const speaker = lastChunk.speaker;
-
-    let intro = `Basándome en lo que dijo **${speaker}** ("${lastChunk.text.substring(0, 80)}..."), te sugiero:\n\n`;
-
-    // Context-specific response pools
-    if (text.includes('precio') || text.includes('presupuesto') || text.includes('costo')) {
-      return intro +
-        `**Opción 1 (Directa):** "Tengo los números del presupuesto listos. Podemos ajustar el alcance para mantener el margen."\n\n` +
-        `**Opción 2 (Propuesta):** "Propongo un esquema de pago por hitos para asegurar el flujo de caja."\n\n` +
-        `**Opción 3 (Pregunta):** "¿Cuál es el tope presupuestario aprobado para esta fase?"`;
+    if (!lastChunk || !lastChunk.text) {
+      return 'Aún no hay suficiente contexto en la transcripción para sugerir una respuesta.';
     }
 
-    if (text.includes('fecha') || text.includes('cuándo') || text.includes('entrega') || text.includes('plazo')) {
-      return intro +
-        `**Opción 1:** "La primera versión estará lista para revisión en este sprint."\n\n` +
-        `**Opción 2:** "Propongo una entrega parcial el miércoles para validar avances."\n\n` +
-        `**Opción 3:** "¿Quién dará la aprobación final al momento de la entrega?"`;
+    const text = lastChunk.text.trim();
+    const speaker = lastChunk.speaker || 'Interlocutor';
+    const lower = text.toLowerCase();
+
+    const snippet = this.getSubjectSnippet(text);
+
+    let option1 = '';
+    let option2 = '';
+    let option3 = '';
+
+    if (lower.includes('?') || lower.includes('qué') || lower.includes('cómo') || lower.includes('opinan') || lower.includes('gusta')) {
+      option1 = `**Opción 1 (Afirmativa):** "Sí, totalmente de acuerdo con lo que mencionas sobre ${snippet}. Me parece una excelente idea."`;
+      option2 = `**Opción 2 (Analítica):** "Respecto a ${snippet}, creo que es un punto interesante que vale la pena evaluar en detalle."`;
+      option3 = `**Opción 3 (Pregunta de seguimiento):** "¿Qué otros factores o detalles consideran importantes sobre este tema?"`;
+    } else {
+      option1 = `**Opción 1 (Alineación):** "Entendido, ${speaker}. Coincido con lo que acabas de mencionar sobre ${snippet}."`;
+      option2 = `**Opción 2 (Propuesta):** "Podemos tomar eso como punto de partida y avanzar con los siguientes pasos."`;
+      option3 = `**Opción 3 (Síntesis):** "Perfecto, queda confirmado ese punto para el informe de la reunión."`;
     }
 
-    if (text.includes('problema') || text.includes('error') || text.includes('no funciona') || text.includes('urgente')) {
-      return intro +
-        `**Opción 1:** "Entiendo la preocupación. Tenemos un plan B preparado para ese escenario."\n\n` +
-        `**Opción 2:** "Propongo un POC de 2 semanas para validar la viabilidad antes de comprometernos."\n\n` +
-        `**Opción 3:** "¿Cuál es específicamente el punto que genera más preocupación?"`;
-    }
+    return `Basándome en lo último dicho por **${speaker}** ("${text}"):\n\n${option1}\n\n${option2}\n\n${option3}`;
+  }
 
-    if (text.includes('opinión') || text.includes('qué piensas') || text.includes('qué opinas')) {
-      return intro +
-        `**Opción 1:** "En mi opinión, la mejor ruta es avanzar con el enfoque modular que hemos discutido."\n\n` +
-        `**Opción 2:** "Creo que deberíamos priorizar la estabilidad antes que las nuevas funcionalidades."\n\n` +
-        `**Opción 3:** "Coincido con el punto anterior. ¿Podemos definir los próximos pasos concretos?"`;
-    }
-
-    // Generic response
-    return intro +
-      `**Opción 1 (Acuerdo):** "Totalmente de acuerdo, ${speaker}. Podemos avanzar con ese enfoque."\n\n` +
-      `**Opción 2 (Propuesta):** "Una alternativa sería dividir el entregable en dos fases para medir avances."\n\n` +
-      `**Opción 3 (Pregunta):** "¿Cuál sería el impacto si priorizamos esta tarea hoy?"`;
+  getSubjectSnippet(text) {
+    const clean = text.replace(/[?¿!¡]/g, '').trim();
+    const words = clean.split(/\s+/);
+    if (words.length <= 6) return `"${clean}"`;
+    return `"${words.slice(-6).join(' ')}"`;
   }
 
   /**
-   * Generic contextual response for free-form questions
+   * Dynamic Topic Extractor: Extracts key subject phrases from actual spoken text
+   * instead of relying on hardcoded static dictionaries.
    */
-  generateContextualResponse(userMessage, recentText, topic, lastChunk) {
-    const lower = userMessage.toLowerCase();
-
-    // Try to find relevant info in transcript
-    const keywords = lower.split(/\s+/).filter(w => w.length > 3);
-    const matches = [];
-    
-    if (lastChunk) {
-      const lastText = lastChunk.text.toLowerCase();
-      for (const kw of keywords) {
-        if (lastText.includes(kw)) {
-          matches.push(lastChunk);
-          break;
-        }
-      }
-    }
-
-    if (matches.length > 0) {
-      return `Respecto a tu pregunta sobre "${userMessage}":\n\n` +
-        `En la reunión, **${matches[0].speaker}** mencionó: "${matches[0].text}"\n\n` +
-        `Tema actual: "${topic}". ¿Quieres que te sugiera cómo responder a esto?`;
-    }
-
-    return `Sobre "${userMessage}" en el contexto de la reunión ("${topic}"):\n\n` +
-      `La conversación reciente no menciona directamente ese tema, pero puedo ayudarte a:\n` +
-      `• Generar una respuesta relacionada\n` +
-      `• Buscar si se mencionó antes\n` +
-      `• Darte un resumen actualizado\n\n` +
-      `¿Qué prefieres?`;
-  }
-
-  // ===== Existing helper methods =====
-
   extractTopic(recentText, fullText) {
-    const combined = (recentText + ' ' + fullText).toLowerCase();
+    const combined = (recentText + ' ' + fullText);
 
-    const topicMap = [
-      { keys: ['presupuesto', 'costo', 'precio', 'dinero', 'inversión', 'factura', 'pago'], topic: 'Presupuesto y Análisis Financiero' },
-      { keys: ['fecha', 'entrega', 'sprint', 'deadline', 'plazo', 'calendario', 'cronograma'], topic: 'Planificación de Fechas y Entregables' },
-      { keys: ['vercel', 'github', 'despliegue', 'deploy', 'servidor', 'hosting'], topic: 'Infraestructura Web y Despliegue' },
-      { keys: ['diseño', 'ui', 'ux', 'interfaz', 'prototipo', 'mockup'], topic: 'Diseño de Interfaz y UX' },
-      { keys: ['api', 'backend', 'base de datos', 'endpoint', 'integración'], topic: 'Arquitectura Backend e Integraciones' },
-      { keys: ['cliente', 'usuario', 'feedback', 'satisfacción'], topic: 'Experiencia del Cliente y Feedback' },
-      { keys: ['marketing', 'campaña', 'publicidad', 'marca', 'redes sociales'], topic: 'Marketing y Comunicación' },
-      { keys: ['equipo', 'contratación', 'talento', 'roles'], topic: 'Gestión de Equipo y RRHH' },
-      { keys: ['seguridad', 'cifrado', 'autenticación', 'privacidad'], topic: 'Seguridad y Protección de Datos' },
-      { keys: ['testing', 'prueba', 'qa', 'bug', 'error'], topic: 'Control de Calidad y Testing' },
-      { keys: ['venta', 'propuesta', 'contrato', 'negocio'], topic: 'Negociación Comercial y Ventas' },
-      { keys: ['producto', 'feature', 'roadmap', 'mvp', 'lanzamiento'], topic: 'Desarrollo de Producto' },
-      { keys: ['problema', 'bloqueo', 'urgente', 'crítico'], topic: 'Resolución de Problemas' },
-      { keys: ['hola', 'buenos días', 'buenas tardes', 'empezar'], topic: 'Inicio y Bienvenida' },
-    ];
+    const stopWords = new Set([
+      'hola', 'bueno', 'esto', 'esta', 'este', 'una', 'un', 'unos', 'unas', 'prueba', 'entonces',
+      'gracias', 'quisiera', 'hablar', 'poco', 'que', 'para', 'con', 'por', 'los', 'las', 'del',
+      'pero', 'mas', 'más', 'nada', 'pues', 'como', 'sobre', 'todo', 'bien', 'siento', 'veo',
+      'creo', 'dice', 'dijo', 'hacer', 'muy', 'ustedes', 'gusta', 'opinan', 'estoy', 'esta',
+      'siento', 'sabes', 'saben', 'usted', 'tener', 'tenemos', 'tambien', 'también'
+    ]);
 
-    for (const entry of topicMap) {
-      if (entry.keys.some(k => combined.includes(k))) return entry.topic;
+    const words = combined.match(/[a-zA-ZáéíóúÁÉÍÓÚñÑ]+/g) || [];
+    const keywords = [];
+    const seen = new Set();
+
+    words.forEach(w => {
+      const lower = w.toLowerCase();
+      if (w.length >= 4 && !stopWords.has(lower) && !seen.has(lower)) {
+        seen.add(lower);
+        // Capitalize nicely
+        keywords.push(w[0].toUpperCase() + w.slice(1));
+      }
+    });
+
+    if (keywords.length > 0) {
+      const mainSubjects = keywords.slice(-3);
+      return mainSubjects.join(' / ');
     }
 
-    const words = recentText.split(/\s+/).filter(w => w.length > 6);
-    if (words.length >= 2) return `Discusión: ${words.slice(-3).join(' ')}`;
-
-    return 'Coordinación General de la Reunión';
+    return 'Conversación en vivo';
   }
 
   analyzeSentiment(text) {

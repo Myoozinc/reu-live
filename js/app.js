@@ -113,12 +113,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (aiMeta) {
       updateMetaUI(aiMeta);
     }
-
-    // Check if AI should auto-generate an insight message
-    const autoInsight = aiEngine.checkAutoInsight(sttEngine.transcriptHistory);
-    if (autoInsight) {
-      addChatMessage('insight', autoInsight);
-    }
   };
 
   sttEngine.onStatusChange = (status) => {

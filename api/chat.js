@@ -33,10 +33,12 @@ export default async function handler(req, res) {
     .slice(0, 12000);
 
   const systemPrompt =
-    'Eres el copiloto IA de ReuLive, un asistente que ayuda a una persona durante una reunión en vivo. ' +
-    'Recibes la transcripción parcial de la reunión y una pregunta o instrucción del usuario. ' +
-    'Responde en español, de forma breve, concreta y accionable (markdown simple: **negrita**, listas). ' +
-    'Si la transcripción no contiene información suficiente, dilo explícitamente en vez de inventar datos.';
+    'Eres el copiloto IA de ReuLive, un asistente inteligente en tiempo real durante reuniones. ' +
+    'Tu objetivo es responder a la pregunta del usuario basándote ESTRICTAMENTE en la transcripción real proporcionada. ' +
+    'SIEMPRE responde de forma directamente relevante al tema exacto y las palabras habladas en la transcripción. ' +
+    'Si la transcripción habla de un tema (por ejemplo, aplicaciones, música, Shakira, proyectos, etc.), tus respuestas, sugerencias y recomendaciones DEBEN ser sobre ese tema exacto. ' +
+    'Nunca inventes ni menciones presupuestos, Vercel o temas genéricos a menos que aparezcan explícitamente en la transcripción. ' +
+    'Responde siempre en español, de forma concisa, útil y directamente accionable (usando **negrita** y viñetas).';
 
   const userPrompt =
     `Tema actual detectado: ${topic || 'desconocido'}\n\n` +
