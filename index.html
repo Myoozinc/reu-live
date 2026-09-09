@@ -130,35 +130,91 @@
       </div>
     </section>
 
-    <!-- === AI Chat Section (replaces suggestion cards) === -->
+    <!-- === AI Copilot Live HUD Section === -->
     <section class="copilot-section" id="copilotSection">
       <div class="copilot-card glass-panel">
 
-        <!-- Chat Header -->
+        <!-- Copilot Header with Speaker Switch -->
         <div class="copilot-header">
           <div class="copilot-title">
-            <h3><i class="fa-solid fa-robot text-cyan"></i> Copiloto IA</h3>
-            <p class="copilot-subtitle">Interpreta la reunión y responde tus preguntas</p>
+            <h3><i class="fa-solid fa-sparkles text-cyan"></i> Copiloto en Vivo</h3>
+            <p class="copilot-subtitle" id="copilotSubtitle">Analizando reunión en tiempo real</p>
           </div>
-          <button id="btnClearChat" class="btn-icon-soft" title="Limpiar chat">
-            <i class="fa-solid fa-trash"></i>
-          </button>
+          <div class="copilot-header-actions">
+            <!-- Active Speaker Switch -->
+            <div class="speaker-toggle-group" title="Indica quién está hablando">
+              <button id="btnSpeakerUser" class="btn-speaker active" data-speaker="user">
+                <i class="fa-solid fa-user text-cyan"></i> Tú
+              </button>
+              <button id="btnSpeakerInterlocutor" class="btn-speaker" data-speaker="interlocutor">
+                <i class="fa-solid fa-users text-purple"></i> Interlocutor
+              </button>
+            </div>
+            <button id="btnRefreshCopilot" class="btn-icon-soft" title="Actualizar sugerencias ahora">
+              <i class="fa-solid fa-arrows-rotate"></i>
+            </button>
+          </div>
         </div>
 
-        <!-- AI Chat Messages -->
-        <div class="ai-chat-messages" id="aiChatMessages">
-          <div class="chat-msg chat-ai">
-            <div class="chat-avatar"><i class="fa-solid fa-robot"></i></div>
-            <div class="chat-bubble">
-              <p>¡Hola! Soy tu copiloto IA. Cuando inicies la captura, analizaré la conversación en tiempo real. Puedes preguntarme:</p>
-              <ul class="chat-tips">
-                <li>"¿De qué están hablando?"</li>
-                <li>"Dame un resumen"</li>
-                <li>"¿Qué debo responder?"</li>
-                <li>"¿Cuáles son los acuerdos?"</li>
-              </ul>
+        <!-- Live Topic & Real-Time Context Banner -->
+        <div class="copilot-summary-banner" id="copilotSummaryBanner">
+          <div class="summary-badge"><i class="fa-solid fa-compass-drafting text-cyan"></i> Contexto en Vivo</div>
+          <p id="copilotLiveSummary">Esperando intervenciones en la reunión para generar respuestas y propuestas en tiempo real...</p>
+        </div>
+
+        <!-- === Live Action Cards (Fixed in place, never lost in scroll) === -->
+        <div class="live-action-cards" id="liveActionCards">
+
+          <!-- 1. Respuesta Inmediata -->
+          <div class="action-card card-direct">
+            <div class="card-header">
+              <span class="card-tag"><i class="fa-solid fa-bolt text-cyan"></i> Qué responder ahora</span>
+              <button class="card-copy-btn" data-target="liveDirectText" title="Copiar respuesta">
+                <i class="fa-regular fa-copy"></i> Copiar
+              </button>
+            </div>
+            <div class="card-body" id="liveDirectText">
+              "Hola a todos, estoy listo para iniciar y dar seguimiento a los puntos de la reunión."
             </div>
           </div>
+
+          <!-- 2. Propuesta Inteligente -->
+          <div class="action-card card-proposal">
+            <div class="card-header">
+              <span class="card-tag"><i class="fa-solid fa-lightbulb text-purple"></i> Propuesta sugerida</span>
+              <button class="card-copy-btn" data-target="liveProposalText" title="Copiar propuesta">
+                <i class="fa-regular fa-copy"></i> Copiar
+              </button>
+            </div>
+            <div class="card-body" id="liveProposalText">
+              "Propongo revisar primero los temas principales de la agenda antes de profundizar en los detalles."
+            </div>
+          </div>
+
+          <!-- 3. Pregunta Estratégica -->
+          <div class="action-card card-question">
+            <div class="card-header">
+              <span class="card-tag"><i class="fa-solid fa-circle-question text-pink"></i> Pregunta para la reunión</span>
+              <button class="card-copy-btn" data-target="liveQuestionText" title="Copiar pregunta">
+                <i class="fa-regular fa-copy"></i> Copiar
+              </button>
+            </div>
+            <div class="card-body" id="liveQuestionText">
+              "¿Hay algún tema o requerimiento prioritario que debamos considerar antes de avanzar?"
+            </div>
+          </div>
+
+          <!-- Custom Query Answer Card (appears when user asks a specific question) -->
+          <div class="action-card card-custom-reply" id="customReplyCard" style="display: none;">
+            <div class="card-header">
+              <span class="card-tag"><i class="fa-solid fa-robot text-emerald"></i> Respuesta a tu consulta</span>
+              <button class="card-copy-btn" data-target="customReplyText" title="Copiar">
+                <i class="fa-regular fa-copy"></i> Copiar
+              </button>
+            </div>
+            <div class="card-body" id="customReplyText"></div>
+          </div>
+
         </div>
 
         <!-- Expandable: Full Transcript -->

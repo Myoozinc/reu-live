@@ -47,21 +47,60 @@ class AIEngine {
   }
 
   /**
-   * Should we generate an auto-insight message?
-   * Returns insight text or null
+   * Fetches real-time structured Copilot suggestions from /api/chat using full transcript
+   * Always connected to the entire conversation history!
    */
-  checkAutoInsight(transcriptHistory) {
-    if (!transcriptHistory || transcriptHistory.length === 0) return null;
-    
-    const chunkCount = transcriptHistory.length;
-    
-    // Generate insight every N chunks
-    if (chunkCount - this.lastInsightChunkCount >= this.insightInterval) {
-      this.lastInsightChunkCount = chunkCount;
-      return this.generateAutoInsight(transcriptHistory);
+  async fetchLiveCopilot(transcriptHistory) {
+    if (!transcriptHistory || transcriptHistory.length === 0) {
+      return this.getLocalCopilotFallback(transcriptHistory);
     }
-    
-    return null;
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'copilot',
+          transcript: transcriptHistory,
+          topic: this.currentTopic
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.copilot) {
+          const c = data.copilot;
+          if (c.topic) this.currentTopic = c.topic;
+          return {
+            topic: c.topic || this.currentTopic,
+            summary: c.summary || 'Conversación en curso',
+            direct_response: c.direct_response || 'De acuerdo, podemos profundizar en ese punto.',
+            proposal: c.proposal || 'Propongo definir los siguientes pasos concretos.',
+            question: c.question || '¿Qué otros aspectos consideran prioritarios?',
+            source: data.provider || 'ai'
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('Live copilot backend request error, using local generator:', err);
+    }
+
+    return this.getLocalCopilotFallback(transcriptHistory);
+  }
+
+  getLocalCopilotFallback(history) {
+    const lastChunk = history && history.length > 0 ? history[history.length - 1] : null;
+    const text = lastChunk ? lastChunk.text : '';
+    const snippet = text ? this.getSubjectSnippet(text) : 'el tema actual';
+
+    return {
+      topic: this.currentTopic || 'Conversación en vivo',
+      summary: text ? `Debatiendo sobre ${snippet}` : 'En espera de intervenciones en la reunión...',
+      direct_response: text ? `Totalmente de acuerdo con lo que se acaba de plantear sobre ${snippet}.` : 'Listo para dar seguimiento a los temas de la reunión.',
+      proposal: text ? `Propongo revisar los puntos principales de ${snippet} para llegar a un acuerdo.` : 'Propongo revisar los objetivos principales antes de avanzar.',
+      question: text ? `¿Qué opinan ustedes sobre este aspecto de ${snippet}?` : '¿Hay algún tema prioritario que debamos tratar primero?',
+      source: 'local'
+    };
   }
 
   /**

@@ -23,13 +23,21 @@ class STTEngine {
       user: 'Tú'
     };
 
-    this.lastSpeakerType = 'interlocutor';
+    this.lastSpeakerType = 'user';
+    this.activeSpeaker = 'user';
     this.lastSpeechTime = 0;
     this.isRealTimeTranscriptionActive = false;
     this.audioQueue = [];
     this.isProcessingQueue = false;
 
     this.initRecognition();
+  }
+
+  setActiveSpeaker(type) {
+    if (type === 'user' || type === 'interlocutor') {
+      this.activeSpeaker = type;
+      this.lastSpeakerType = type;
+    }
   }
 
   setSpeakerName(name) {
@@ -223,23 +231,20 @@ class STTEngine {
 
   detectSpeaker(text, now) {
     const lower = text.toLowerCase();
-    // If there was a long silence gap, might be a different speaker
-    const gap = now - this.lastSpeechTime;
     
-    // Self-referential markers -> user
-    if (lower.startsWith('yo ') || lower.includes('mi opinión') || lower.includes('creo que') || lower.startsWith('bueno, yo')) {
+    // Explicit user markers
+    if (lower.startsWith('yo ') || lower.includes('mi opinión') || lower.includes('creo que') || lower.startsWith('bueno, yo') || lower.includes('por mi parte')) {
       return 'user';
     }
-    
-    // If gap is large, alternate speaker
-    if (gap > this.silenceGapMs && this.lastSpeakerType === 'user') {
-      return 'interlocutor';
+
+    // Explicit interlocutor questions / references
+    if (lower.startsWith('ustedes ') || lower.startsWith('usted ') || lower.includes('qué opinan ustedes') || lower.includes('les gusta a ustedes')) {
+      // If the phrase is asking the group, this is typical of whoever is presenting
+      return this.activeSpeaker || 'user';
     }
-    if (gap > this.silenceGapMs && this.lastSpeakerType === 'interlocutor') {
-      return 'user';
-    }
-    
-    return this.lastSpeakerType;
+
+    // Default to the currently selected or active speaker
+    return this.activeSpeaker || this.lastSpeakerType || 'user';
   }
 
   scheduleRestart() {

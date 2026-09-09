@@ -350,22 +350,28 @@ class MediaEngine {
     const recordIntervalSlice = () => {
       if (!this.isRecording) return;
 
-      // If we have separate displayStream audio (Zoom/system), record it as 'interlocutor'
-      if (this.displayStream && this.displayStream.getAudioTracks().length > 0) {
+      const hasDisplayAudio = this.displayStream && this.displayStream.getAudioTracks().length > 0;
+      const hasMicAudio = this.micStream && this.micStream.getAudioTracks().length > 0 && !this.isMicMuted;
+
+      if (hasDisplayAudio) {
+        // System audio (Zoom / Meeting participants) -> 'interlocutor'
         const sysStream = new MediaStream([this.displayStream.getAudioTracks()[0]]);
         emitChunkFromStream(sysStream, 'interlocutor');
 
-        // Record micStream separately as 'user' (if mic is not muted)
-        if (this.micStream && this.micStream.getAudioTracks().length > 0 && !this.isMicMuted) {
+        // Local microphone -> 'user' ("Tú")
+        if (hasMicAudio) {
           const micTrack = this.micStream.getAudioTracks()[0];
           if (!this.displayStream.getAudioTracks().includes(micTrack)) {
             const micStreamObj = new MediaStream([micTrack]);
             emitChunkFromStream(micStreamObj, 'user');
           }
         }
+      } else if (hasMicAudio) {
+        // Only microphone is active -> this is the user speaking ('user')
+        const micStreamObj = new MediaStream([this.micStream.getAudioTracks()[0]]);
+        emitChunkFromStream(micStreamObj, 'user');
       } else if (this.audioRecordingDest) {
-        // Fallback: record mixed audio stream
-        emitChunkFromStream(this.audioRecordingDest.stream, 'interlocutor');
+        emitChunkFromStream(this.audioRecordingDest.stream, 'user');
       }
     };
 

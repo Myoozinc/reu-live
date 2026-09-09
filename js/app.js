@@ -1,6 +1,6 @@
 /**
  * ReuLive - Main Application Controller
- * Unified flow with mic/video mute, AI chat interface, and voice-to-chat.
+ * Live Copilot HUD, Speaker Switcher, Real-Time Proposals/Responses, and Audio Capture.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let timerSeconds = 0;
   let isVoiceChatting = false;
   let voiceChatRecognition = null;
+  let copilotUpdateDebounce = null;
 
   // ===== DOM Elements =====
   // Header
@@ -43,12 +44,24 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnMuteMic = document.getElementById('btnMuteMic');
   const btnMuteVideo = document.getElementById('btnMuteVideo');
 
-  // AI Chat
-  const aiChatMessages = document.getElementById('aiChatMessages');
+  // Speaker Switcher
+  const btnSpeakerUser = document.getElementById('btnSpeakerUser');
+  const btnSpeakerInterlocutor = document.getElementById('btnSpeakerInterlocutor');
+
+  // Live Copilot HUD
+  const copilotSubtitle = document.getElementById('copilotSubtitle');
+  const copilotLiveSummary = document.getElementById('copilotLiveSummary');
+  const liveDirectText = document.getElementById('liveDirectText');
+  const liveProposalText = document.getElementById('liveProposalText');
+  const liveQuestionText = document.getElementById('liveQuestionText');
+  const btnRefreshCopilot = document.getElementById('btnRefreshCopilot');
+  const customReplyCard = document.getElementById('customReplyCard');
+  const customReplyText = document.getElementById('customReplyText');
+
+  // Quick Query / Voice Input
   const aiChatInput = document.getElementById('aiChatInput');
   const btnSendChat = document.getElementById('btnSendChat');
   const btnVoiceChat = document.getElementById('btnVoiceChat');
-  const btnClearChat = document.getElementById('btnClearChat');
 
   // Transcript
   const transcriptStream = document.getElementById('transcriptStream');
@@ -85,6 +98,53 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ===== Speaker Switcher Logic =====
+  const setSpeakerUI = (type) => {
+    sttEngine.setActiveSpeaker(type);
+    if (btnSpeakerUser) btnSpeakerUser.classList.toggle('active', type === 'user');
+    if (btnSpeakerInterlocutor) btnSpeakerInterlocutor.classList.toggle('active', type === 'interlocutor');
+  };
+
+  if (btnSpeakerUser) {
+    btnSpeakerUser.addEventListener('click', () => setSpeakerUI('user'));
+  }
+  if (btnSpeakerInterlocutor) {
+    btnSpeakerInterlocutor.addEventListener('click', () => setSpeakerUI('interlocutor'));
+  }
+
+  // ===== Live Copilot HUD Updater =====
+  const updateLiveCopilotHUD = async () => {
+    if (!copilotLiveSummary) return;
+
+    if (copilotSubtitle) {
+      copilotSubtitle.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-cyan"></i> Actualizando sugerencias con IA...';
+    }
+
+    try {
+      const copilotData = await aiEngine.fetchLiveCopilot(sttEngine.transcriptHistory);
+      if (copilotData) {
+        if (copilotLiveSummary) copilotLiveSummary.textContent = copilotData.summary;
+        if (liveDirectText) liveDirectText.textContent = `"${copilotData.direct_response.replace(/^"|"$/g, '')}"`;
+        if (liveProposalText) liveProposalText.textContent = `"${copilotData.proposal.replace(/^"|"$/g, '')}"`;
+        if (liveQuestionText) liveQuestionText.textContent = `"${copilotData.question.replace(/^"|"$/g, '')}"`;
+        if (currentTopicText && copilotData.topic) currentTopicText.textContent = copilotData.topic;
+        if (analyticsCurrentTopic && copilotData.topic) analyticsCurrentTopic.textContent = copilotData.topic;
+      }
+    } catch (e) {
+      console.warn('Error updating live copilot HUD:', e);
+    } finally {
+      if (copilotSubtitle) {
+        copilotSubtitle.textContent = 'Conectado a toda la transcripción en vivo';
+      }
+    }
+  };
+
+  if (btnRefreshCopilot) {
+    btnRefreshCopilot.addEventListener('click', () => {
+      updateLiveCopilotHUD();
+    });
+  }
+
   // ===== STT Callbacks =====
   sttEngine.onInterimResult = (text) => {
     if (subtitlesText) {
@@ -108,11 +168,17 @@ document.addEventListener('DOMContentLoaded', () => {
       }, 3000);
     }
 
-    // Process with AI Engine
+    // Process metadata
     const aiMeta = aiEngine.processTranscript(sttEngine.transcriptHistory);
     if (aiMeta) {
       updateMetaUI(aiMeta);
     }
+
+    // Debounce Live Copilot HUD update so it doesn't flood API on every single phrase
+    if (copilotUpdateDebounce) clearTimeout(copilotUpdateDebounce);
+    copilotUpdateDebounce = setTimeout(() => {
+      updateLiveCopilotHUD();
+    }, 4000);
   };
 
   sttEngine.onStatusChange = (status) => {
@@ -120,6 +186,25 @@ document.addEventListener('DOMContentLoaded', () => {
       updateStatus(true, 'TRANSCRIBIENDO EN VIVO');
     }
   };
+
+  // ===== Copy Button Handlers =====
+  document.addEventListener('click', (e) => {
+    const copyBtn = e.target.closest('.card-copy-btn');
+    if (copyBtn) {
+      const targetId = copyBtn.getAttribute('data-target');
+      const targetElem = document.getElementById(targetId);
+      if (targetElem) {
+        const textToCopy = targetElem.textContent.replace(/^"|"$/g, '').trim();
+        navigator.clipboard.writeText(textToCopy).catch(() => {});
+        copyBtn.classList.add('copied');
+        copyBtn.innerHTML = '<i class="fa-solid fa-check"></i> Copiado';
+        setTimeout(() => {
+          copyBtn.classList.remove('copied');
+          copyBtn.innerHTML = '<i class="fa-regular fa-copy"></i> Copiar';
+        }, 2000);
+      }
+    }
+  });
 
   // ===== MIC MUTE / VIDEO MUTE =====
   let isMicMuted = false;
@@ -136,9 +221,6 @@ document.addEventListener('DOMContentLoaded', () => {
       btnMuteMic.querySelector('i').className = 'fa-solid fa-microphone-slash';
       btnMuteMic.querySelector('.control-label').textContent = 'Mic Off';
 
-      // Also pause STT when mic is muted (so user noise doesn't get transcribed)
-      // But we keep listening for system audio on desktop
-      // On mobile, we pause completely since mic IS the source
       if (mediaEngine.isMobile()) {
         sttEngine.stopListening();
       }
@@ -200,16 +282,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
       sourceLabel.textContent = `Fuente: ${result.sourceLabel || 'Micrófono'}`;
 
-      // AVISO: el navegador solo puede transcribir el micrófono real si usa Web Speech API local.
-      // Si está activo /api/transcribe con Groq Whisper, no aplica la limitación.
-      if (!mediaEngine.isMobile() && !sttEngine.isRealTimeTranscriptionActive) {
-        addChatMessage('insight',
-          '⚠ La transcripción en vivo en modo local solo puede "escuchar" tu micrófono. ' +
-          'Si usas auriculares, la voz de los demás participantes no se transcribirá automáticamente en modo offline. ' +
-          'Para transcribir a todos, usa los altavoces del dispositivo o configura GROQ_API_KEY en Vercel.'
-        );
-      }
-
       // Start recording
       mediaEngine.startRecording();
 
@@ -236,8 +308,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       updateStatus(true, 'GRABANDO EN VIVO');
 
-      // Add chat message
-      addChatMessage('ai', '🎙️ Captura iniciada. Estoy escuchando la reunión y analizando la conversación en tiempo real. Pregúntame lo que necesites.');
+      // Initial Live Copilot fetch
+      updateLiveCopilotHUD();
 
       // Listen for screen share ending
       if (mediaEngine.displayStream) {
@@ -293,88 +365,55 @@ document.addEventListener('DOMContentLoaded', () => {
     subtitlesText.textContent = '';
 
     updateStatus(false, 'Listo');
-
-    addChatMessage('ai', '⏹️ Captura detenida. Los archivos de audio y video se han descargado automáticamente.');
   };
 
   btnCapture.addEventListener('click', startCapture);
   if (btnPlaceholderStart) btnPlaceholderStart.addEventListener('click', startCapture);
 
-  // ===== AI CHAT =====
-  const sendChatMessage = async (text) => {
+  // ===== QUICK ASK / CUSTOM QUERY =====
+  const sendCustomQuery = async (text) => {
     if (!text || !text.trim()) return;
     const message = text.trim();
 
-    // Add user message to chat
-    addChatMessage('user', message);
-
-    // Show a lightweight "typing" placeholder while we wait for the real AI
-    const typingMsg = addChatMessage('ai', '…');
-
-    const { text: response, source } = await aiEngine.respondToChatAsync(message, sttEngine.transcriptHistory);
-
-    if (typingMsg) typingMsg.remove();
-    addChatMessage('ai', response, source === 'fallback');
-  };
-
-  btnSendChat.addEventListener('click', () => {
-    sendChatMessage(aiChatInput.value);
-    aiChatInput.value = '';
-  });
-
-  aiChatInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-      sendChatMessage(aiChatInput.value);
-      aiChatInput.value = '';
+    if (customReplyCard) {
+      customReplyCard.style.display = 'flex';
+      customReplyText.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-cyan"></i> Consultando a la IA con toda la transcripción...';
     }
-  });
 
-  // Chat tip click handlers (the initial tip buttons)
-  aiChatMessages.addEventListener('click', (e) => {
-    const tip = e.target.closest('.chat-tips li');
-    if (tip) {
-      sendChatMessage(tip.textContent);
-    }
-    // Copy button
-    const copyBtn = e.target.closest('.chat-copy-btn');
-    if (copyBtn) {
-      const bubble = copyBtn.closest('.chat-bubble');
-      if (bubble) {
-        const text = bubble.querySelector('p') ? 
-          Array.from(bubble.querySelectorAll('p')).map(p => p.textContent).join('\n') : 
-          bubble.textContent;
-        navigator.clipboard.writeText(text).catch(() => {});
-        copyBtn.innerHTML = '<i class="fa-solid fa-check"></i> Copiado';
-        setTimeout(() => {
-          copyBtn.innerHTML = '<i class="fa-regular fa-copy"></i> Copiar';
-        }, 2000);
+    try {
+      const { text: response, source } = await aiEngine.respondToChatAsync(message, sttEngine.transcriptHistory);
+      if (customReplyText) {
+        const formatted = response.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+        const sourceBadge = source === 'fallback'
+          ? ' <span class="chat-fallback-tag"><i class="fa-solid fa-plug-circle-exclamation"></i> Local</span>'
+          : '';
+        customReplyText.innerHTML = `<p><strong>Tú:</strong> "${message}"</p><p style="margin-top: 6px;">${formatted}${sourceBadge}</p>`;
+      }
+    } catch (err) {
+      if (customReplyText) {
+        customReplyText.textContent = 'Error al consultar la IA. Inténtalo de nuevo.';
       }
     }
-  });
+  };
 
-  // Clear chat
-  if (btnClearChat) {
-    btnClearChat.addEventListener('click', () => {
-      aiChatMessages.innerHTML = `
-        <div class="chat-msg chat-ai">
-          <div class="chat-avatar"><i class="fa-solid fa-robot"></i></div>
-          <div class="chat-bubble">
-            <p>Chat reiniciado. Sigo escuchando la reunión. ¿En qué puedo ayudarte?</p>
-          </div>
-        </div>
-      `;
+  if (btnSendChat && aiChatInput) {
+    btnSendChat.addEventListener('click', () => {
+      sendCustomQuery(aiChatInput.value);
+      aiChatInput.value = '';
+    });
+
+    aiChatInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        sendCustomQuery(aiChatInput.value);
+        aiChatInput.value = '';
+      }
     });
   }
 
-  // ===== VOICE-TO-CHAT =====
-  // User can press and hold the mic button to speak a question to the AI
-  // This uses a SEPARATE SpeechRecognition instance from the meeting transcription
+  // ===== VOICE-TO-QUERY =====
   const initVoiceChat = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      btnVoiceChat.style.display = 'none';
-      return;
-    }
+    if (!SpeechRecognition || !btnVoiceChat) return;
 
     voiceChatRecognition = new SpeechRecognition();
     voiceChatRecognition.continuous = false;
@@ -393,56 +432,56 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-      // Show interim in input
-      if (interimText) {
+      if (interimText && aiChatInput) {
         aiChatInput.value = interimText;
       }
 
-      // Send final result
       if (finalText.trim()) {
-        aiChatInput.value = '';
-        sendChatMessage(finalText.trim());
+        if (aiChatInput) aiChatInput.value = '';
+        sendCustomQuery(finalText.trim());
       }
     };
 
     voiceChatRecognition.onend = () => {
       isVoiceChatting = false;
       btnVoiceChat.classList.remove('recording');
-      aiChatInput.placeholder = 'Escribe o habla al copiloto...';
+      if (aiChatInput) aiChatInput.placeholder = 'Pregunta algo específico a la IA...';
     };
 
     voiceChatRecognition.onerror = (e) => {
-      console.warn('Voice chat error:', e.error);
+      console.warn('Voice query error:', e.error);
       isVoiceChatting = false;
       btnVoiceChat.classList.remove('recording');
-      aiChatInput.placeholder = 'Escribe o habla al copiloto...';
+      if (aiChatInput) aiChatInput.placeholder = 'Pregunta algo específico a la IA...';
     };
   };
 
   initVoiceChat();
 
-  btnVoiceChat.addEventListener('click', () => {
-    if (!voiceChatRecognition) return;
+  if (btnVoiceChat) {
+    btnVoiceChat.addEventListener('click', () => {
+      if (!voiceChatRecognition) return;
 
-    if (isVoiceChatting) {
-      // Stop voice chat
-      voiceChatRecognition.stop();
-      isVoiceChatting = false;
-      btnVoiceChat.classList.remove('recording');
-      aiChatInput.placeholder = 'Escribe o habla al copiloto...';
-    } else {
-      // Start voice chat
-      try {
-        voiceChatRecognition.start();
-        isVoiceChatting = true;
-        btnVoiceChat.classList.add('recording');
-        aiChatInput.placeholder = '🎤 Escuchando tu pregunta...';
-        aiChatInput.value = '';
-      } catch (e) {
-        console.warn('Could not start voice chat:', e);
+      if (isVoiceChatting) {
+        voiceChatRecognition.stop();
+        isVoiceChatting = false;
+        btnVoiceChat.classList.remove('recording');
+        if (aiChatInput) aiChatInput.placeholder = 'Pregunta algo específico a la IA...';
+      } else {
+        try {
+          voiceChatRecognition.start();
+          isVoiceChatting = true;
+          btnVoiceChat.classList.add('recording');
+          if (aiChatInput) {
+            aiChatInput.placeholder = '🎤 Escuchando tu consulta privada...';
+            aiChatInput.value = '';
+          }
+        } catch (e) {
+          console.warn('Could not start voice query:', e);
+        }
       }
-    }
-  });
+    });
+  }
 
   // ===== EXPORT REPORT =====
   btnExportReport.addEventListener('click', () => {
@@ -542,52 +581,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (transcriptCount) {
       transcriptCount.textContent = sttEngine.transcriptHistory.length;
     }
-  }
-
-  function addChatMessage(type, text, isFallback) {
-    const msgDiv = document.createElement('div');
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    // Convert **bold** markdown to <strong>
-    const formatted = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
-    const fallbackTag = isFallback
-      ? '<div class="chat-fallback-tag" title="IA en la nube no disponible: respuesta generada localmente por reglas."><i class="fa-solid fa-plug-circle-exclamation"></i> Modo local</div>'
-      : '';
-
-    if (type === 'user') {
-      msgDiv.className = 'chat-msg chat-user';
-      msgDiv.innerHTML = `
-        <div class="chat-avatar"><i class="fa-solid fa-user"></i></div>
-        <div class="chat-bubble">
-          <p>${formatted}</p>
-          <div class="chat-time">${time}</div>
-        </div>
-      `;
-    } else if (type === 'insight') {
-      msgDiv.className = 'chat-msg chat-insight';
-      msgDiv.innerHTML = `
-        <div class="chat-bubble">
-          <p>${formatted}</p>
-          <div class="chat-time">${time}</div>
-        </div>
-      `;
-    } else {
-      // AI message
-      msgDiv.className = 'chat-msg chat-ai';
-      msgDiv.innerHTML = `
-        <div class="chat-avatar"><i class="fa-solid fa-robot"></i></div>
-        <div class="chat-bubble">
-          <p>${formatted}</p>
-          ${fallbackTag}
-          <button class="chat-copy-btn"><i class="fa-regular fa-copy"></i> Copiar</button>
-          <div class="chat-time">${time}</div>
-        </div>
-      `;
-    }
-
-    aiChatMessages.appendChild(msgDiv);
-    aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
-    return msgDiv;
   }
 
   function updateMetaUI(aiMeta) {

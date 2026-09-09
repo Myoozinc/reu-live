@@ -1,10 +1,7 @@
 // Vercel Serverless Function: /api/chat
-// Usa Groq como proveedor principal (rápido y gratis/muy barato) y OpenRouter
-// como respaldo si Groq falla o no está configurado.
-//
-// Variables de entorno necesarias (al menos una):
-//   GROQ_API_KEY       -> https://console.groq.com/keys
-//   OPENROUTER_API_KEY -> https://openrouter.ai/keys
+// Copiloto IA real con Groq y OpenRouter
+// Soporta modo 'copilot' (genera tema, respuesta sugerida, propuesta y pregunta en JSON)
+// y modo 'chat' (responde preguntas libres del usuario basadas en la transcripción).
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -20,8 +17,10 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { userMessage, transcript, topic } = req.body || {};
-  if (!userMessage || typeof userMessage !== 'string') {
+  const { userMessage, transcript, topic, mode } = req.body || {};
+  const isCopilotMode = mode === 'copilot';
+
+  if (!isCopilotMode && (!userMessage || typeof userMessage !== 'string')) {
     res.status(400).json({ error: 'userMessage requerido' });
     return;
   }
@@ -32,22 +31,41 @@ export default async function handler(req, res) {
     .join('\n')
     .slice(0, 12000);
 
-  const systemPrompt =
-    'Eres el copiloto IA de ReuLive, un asistente inteligente en tiempo real durante reuniones. ' +
-    'Tu objetivo es responder a la pregunta del usuario basándote ESTRICTAMENTE en la transcripción real proporcionada. ' +
-    'SIEMPRE responde de forma directamente relevante al tema exacto y las palabras habladas en la transcripción. ' +
-    'Si la transcripción habla de un tema (por ejemplo, aplicaciones, música, Shakira, proyectos, etc.), tus respuestas, sugerencias y recomendaciones DEBEN ser sobre ese tema exacto. ' +
-    'Nunca inventes ni menciones presupuestos, Vercel o temas genéricos a menos que aparezcan explícitamente en la transcripción. ' +
-    'Responde siempre en español, de forma concisa, útil y directamente accionable (usando **negrita** y viñetas).';
+  let systemPrompt = '';
+  let userPrompt = '';
 
-  const userPrompt =
-    `Tema actual detectado: ${topic || 'desconocido'}\n\n` +
-    `Transcripción reciente de la reunión:\n${transcriptText || '(sin transcripción todavía)'}\n\n` +
-    `Pregunta/instrucción del usuario: ${userMessage}`;
+  if (isCopilotMode) {
+    systemPrompt =
+      'Eres el copiloto IA en vivo de ReuLive para reuniones. Tu misión es analizar la transcripción completa de la conversación y generar sugerencias en tiempo real directamente sobre lo que se está hablando.\n' +
+      'Responde ÚNICAMENTE un objeto JSON válido con estas claves exactas:\n' +
+      '{\n' +
+      '  "topic": "tema principal de la conversación en 2-4 palabras",\n' +
+      '  "summary": "1 oración concisa resumiendo lo que se está debatiendo ahora",\n' +
+      '  "direct_response": "respuesta sugerida inmediata, natural y lista para que el usuario la diga en voz alta",\n' +
+      '  "proposal": "propuesta o idea constructiva sobre el tema en discusión",\n' +
+      '  "question": "pregunta estratégica e interesante para hacerle a la otra persona"\n' +
+      '}\n' +
+      'Reglas críticas: Todo DEBE ser sobre el tema exacto hablado (si hablan de música de Shakira, responde de Shakira; si hablan de una app, responde de la app). NUNCA hables de presupuestos o temas genéricos a menos que aparezcan en el texto. No uses formato markdown alrededor del JSON.';
 
-  // ---- Intento 1: Groq ----
+    userPrompt = `Transcripción de la reunión:\n${transcriptText || '(La reunión acaba de iniciar)'}`;
+  } else {
+    systemPrompt =
+      'Eres el copiloto IA de ReuLive, un asistente inteligente en reuniones en vivo. ' +
+      'Tu objetivo es responder a la pregunta del usuario basándote ESTRICTAMENTE en la transcripción real proporcionada. ' +
+      'SIEMPRE responde de forma directamente relevante al tema exacto de la transcripción. ' +
+      'Si la transcripción habla de un tema (por ejemplo, aplicaciones, música, Shakira, etc.), tus respuestas DEBEN ser sobre ese tema exacto. ' +
+      'Responde en español, de forma concisa, útil y accionable (usando negrita y listas).';
+
+    userPrompt =
+      `Tema detectado: ${topic || 'en curso'}\n\n` +
+      `Transcripción reciente:\n${transcriptText || '(sin transcripción todavía)'}\n\n` +
+      `Pregunta del usuario: ${userMessage}`;
+  }
+
+  // Modelos ordenados por velocidad y fiabilidad en Groq
+  const groqModels = ['openai/gpt-oss-20b', 'groq/compound', 'openai/gpt-oss-120b', 'qwen/qwen3.6-27b'];
+
   if (groqKey) {
-    const groqModels = ['qwen/qwen3.6-27b', 'groq/compound', 'llama-3.3-70b-versatile'];
     for (const model of groqModels) {
       try {
         const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -58,7 +76,7 @@ export default async function handler(req, res) {
           },
           body: JSON.stringify({
             model,
-            max_tokens: 700,
+            max_tokens: 400,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt }
@@ -70,19 +88,33 @@ export default async function handler(req, res) {
           const data = await r.json();
           let reply = data.choices?.[0]?.message?.content;
           if (reply) {
-            // Clean up reasoning <think> tags if present
             reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-            res.status(200).json({ reply, provider: `groq (${model})` });
-            return;
+
+            if (isCopilotMode) {
+              try {
+                // Parse JSON if clean or extract JSON substring
+                const jsonMatch = reply.match(/\{[\s\S]*\}/);
+                const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(reply);
+                res.status(200).json({ copilot: parsed, provider: `groq (${model})` });
+                return;
+              } catch (parseErr) {
+                console.warn('JSON parse error from model, trying next:', parseErr);
+              }
+            } else {
+              res.status(200).json({ reply, provider: `groq (${model})` });
+              return;
+            }
           }
+        } else {
+          console.warn(`Groq model ${model} returned:`, r.status);
         }
       } catch (err) {
-        console.error(`Groq request failed for model ${model}:`, err);
+        console.error(`Groq request error for ${model}:`, err);
       }
     }
   }
 
-  // ---- Intento 2: OpenRouter (respaldo) ----
+  // Respaldo OpenRouter si Groq falla
   if (openrouterKey) {
     const openrouterModels = ['meta-llama/llama-3.3-70b-instruct:free', 'liquid/lfm-2.5-2.6b:free', 'nvidia/nemotron-3.5-lightning:free'];
     for (const model of openrouterModels) {
@@ -95,7 +127,7 @@ export default async function handler(req, res) {
           },
           body: JSON.stringify({
             model,
-            max_tokens: 700,
+            max_tokens: 400,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt }
@@ -108,19 +140,22 @@ export default async function handler(req, res) {
           let reply = data.choices?.[0]?.message?.content;
           if (reply) {
             reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-            res.status(200).json({ reply, provider: `openrouter (${model})` });
-            return;
+            if (isCopilotMode) {
+              try {
+                const jsonMatch = reply.match(/\{[\s\S]*\}/);
+                const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(reply);
+                res.status(200).json({ copilot: parsed, provider: `openrouter (${model})` });
+                return;
+              } catch (parseErr) {}
+            } else {
+              res.status(200).json({ reply, provider: `openrouter (${model})` });
+              return;
+            }
           }
         }
       } catch (err) {
-        console.error(`OpenRouter request failed for model ${model}:`, err);
+        console.error(`OpenRouter error for ${model}:`, err);
       }
-    }
-  } else {
-        console.error('OpenRouter error:', r.status, await r.text());
-      }
-    } catch (err) {
-      console.error('OpenRouter request failed:', err);
     }
   }
 
