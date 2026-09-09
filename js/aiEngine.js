@@ -108,7 +108,43 @@ class AIEngine {
   }
 
   /**
-   * MAIN CHAT METHOD: Respond to user question based on transcript context
+   * REAL AI: Call the /api/chat serverless proxy (Groq/OpenRouter). Falls back
+   * to the local keyword-based engine if the backend has no API key configured,
+   * the request fails, or the browser is offline.
+   * Returns { text, source: 'ai' | 'fallback' }
+   */
+  async respondToChatAsync(userMessage, transcriptHistory) {
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userMessage,
+          transcript: transcriptHistory,
+          topic: this.currentTopic
+        })
+      });
+
+      if (!res.ok) {
+        // 503 = sin API key configurada en el servidor; otros = error puntual
+        return { text: this.respondToChat(userMessage, transcriptHistory), source: 'fallback' };
+      }
+
+      const data = await res.json();
+      if (data && data.reply) {
+        return { text: data.reply, source: 'ai' };
+      }
+      return { text: this.respondToChat(userMessage, transcriptHistory), source: 'fallback' };
+    } catch (err) {
+      // Sin conexión, endpoint no desplegado, etc. -> nunca dejar al usuario sin respuesta
+      console.warn('AI backend unavailable, using local fallback:', err);
+      return { text: this.respondToChat(userMessage, transcriptHistory), source: 'fallback' };
+    }
+  }
+
+  /**
+   * MAIN CHAT METHOD (fallback, 100% local, sin IA real): Respond to user
+   * question based on transcript context using keyword matching.
    */
   respondToChat(userMessage, transcriptHistory) {
     const lower = userMessage.toLowerCase().trim();

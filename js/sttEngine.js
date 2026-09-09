@@ -25,13 +25,118 @@ class STTEngine {
 
     this.lastSpeakerType = 'interlocutor';
     this.lastSpeechTime = 0;
-    this.silenceGapMs = 2000; // Gap to potentially switch speaker
+    this.isRealTimeTranscriptionActive = false;
+    this.audioQueue = [];
+    this.isProcessingQueue = false;
 
     this.initRecognition();
   }
 
   setSpeakerName(name) {
     this.speakers.interlocutor = name || 'Interlocutor';
+  }
+
+  /**
+   * Receives real-time audio chunk from mediaEngine.js ({ blob, speakerType }).
+   * Converts to base64 and POSTs to /api/transcribe (Whisper vía Groq).
+   * Automatically falls back to browser Web Speech API if /api/transcribe fails or 503.
+   */
+  async handleAudioChunk({ blob, speakerType }) {
+    this.audioQueue.push({ blob, speakerType });
+    if (!this.isProcessingQueue) {
+      this.processAudioQueue();
+    }
+  }
+
+  async processAudioQueue() {
+    if (this.audioQueue.length === 0) {
+      this.isProcessingQueue = false;
+      return;
+    }
+
+    this.isProcessingQueue = true;
+    const item = this.audioQueue.shift();
+
+    if (this.onInterimResult) {
+      this.onInterimResult('Transcribiendo audio con Whisper...');
+    }
+
+    try {
+      const base64 = await this.blobToBase64(item.blob);
+      const res = await fetch('/api/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          audioBase64: base64,
+          mimeType: item.blob.type || 'audio/webm'
+        })
+      });
+
+      if (this.onInterimResult) {
+        this.onInterimResult('');
+      }
+
+      if (res.ok) {
+        const data = await res.json();
+        const text = (data.text || '').trim();
+
+        if (text.length > 0) {
+          this.isRealTimeTranscriptionActive = true;
+          // Stop browser Web Speech API if it was running as fallback to avoid duplicate entries
+          if (this.recognition && this.isListening) {
+            try { this.recognition.stop(); } catch (e) {}
+          }
+
+          const now = Date.now();
+          const speakerName = this.speakers[item.speakerType] || (item.speakerType === 'user' ? 'Tú' : 'Interlocutor');
+
+          const chunk = {
+            id: now,
+            speaker: speakerName,
+            speakerType: item.speakerType || 'interlocutor',
+            text: text,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            provider: 'whisper'
+          };
+
+          this.transcriptHistory.push(chunk);
+
+          if (this.onFinalResult) {
+            this.onFinalResult(chunk);
+          }
+        }
+      } else {
+        console.warn('/api/transcribe fallback active:', res.status);
+        this.isRealTimeTranscriptionActive = false;
+        // Fall back to Web Speech API
+        if (!this.isListening) {
+          this.startListening();
+        }
+      }
+    } catch (err) {
+      console.warn('Error sending chunk to /api/transcribe, using fallback:', err);
+      this.isRealTimeTranscriptionActive = false;
+      if (this.onInterimResult) this.onInterimResult('');
+      if (!this.isListening) {
+        this.startListening();
+      }
+    }
+
+    // Process next queued chunk
+    setTimeout(() => this.processAudioQueue(), 100);
+  }
+
+  blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const dataUrl = reader.result || '';
+        const base64 = dataUrl.split(',')[1] || '';
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
   }
 
   initRecognition() {

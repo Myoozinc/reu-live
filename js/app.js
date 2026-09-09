@@ -64,6 +64,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // ===== Initialize =====
   mediaEngine.initCanvas(audioCanvas);
 
+  // Real-time audio chunk handler (Whisper STT via /api/transcribe)
+  mediaEngine.onAudioChunk = (chunkData) => {
+    sttEngine.handleAudioChunk(chunkData);
+  };
+
   // Volume meter callback
   mediaEngine.onVolumeChange = (vol) => {
     if (micVolumeLevel) micVolumeLevel.textContent = `${vol}%`;
@@ -199,7 +204,17 @@ document.addEventListener('DOMContentLoaded', () => {
         capturePlaceholder.style.display = 'none';
       }
 
-      sourceLabel.textContent = `Fuente: ${result.sourceLabel}`;
+      sourceLabel.textContent = `Fuente: ${result.sourceLabel || 'Micrófono'}`;
+
+      // AVISO: el navegador solo puede transcribir el micrófono real si usa Web Speech API local.
+      // Si está activo /api/transcribe con Groq Whisper, no aplica la limitación.
+      if (!mediaEngine.isMobile() && !sttEngine.isRealTimeTranscriptionActive) {
+        addChatMessage('insight',
+          '⚠ La transcripción en vivo en modo local solo puede "escuchar" tu micrófono. ' +
+          'Si usas auriculares, la voz de los demás participantes no se transcribirá automáticamente en modo offline. ' +
+          'Para transcribir a todos, usa los altavoces del dispositivo o configura GROQ_API_KEY en Vercel.'
+        );
+      }
 
       // Start recording
       mediaEngine.startRecording();
@@ -292,20 +307,20 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnPlaceholderStart) btnPlaceholderStart.addEventListener('click', startCapture);
 
   // ===== AI CHAT =====
-  const sendChatMessage = (text) => {
+  const sendChatMessage = async (text) => {
     if (!text || !text.trim()) return;
     const message = text.trim();
 
     // Add user message to chat
     addChatMessage('user', message);
 
-    // Get AI response
-    const response = aiEngine.respondToChat(message, sttEngine.transcriptHistory);
-    
-    // Small delay for natural feel
-    setTimeout(() => {
-      addChatMessage('ai', response);
-    }, 300);
+    // Show a lightweight "typing" placeholder while we wait for the real AI
+    const typingMsg = addChatMessage('ai', '…');
+
+    const { text: response, source } = await aiEngine.respondToChatAsync(message, sttEngine.transcriptHistory);
+
+    if (typingMsg) typingMsg.remove();
+    addChatMessage('ai', response, source === 'fallback');
   };
 
   btnSendChat.addEventListener('click', () => {
@@ -447,7 +462,8 @@ document.addEventListener('DOMContentLoaded', () => {
     md += `---\n\n## 📝 Transcripción Completa\n\n`;
 
     history.forEach(item => {
-      md += `* **[${item.timestamp}] ${item.speaker}:** ${item.text}\n`;
+      const provTag = item.provider ? ` _(${item.provider})_` : '';
+      md += `* **[${item.timestamp}] ${item.speaker}:** ${item.text}${provTag}\n`;
     });
 
     md += `\n---\n\n## 🤝 Acuerdos\n`;
@@ -534,12 +550,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function addChatMessage(type, text) {
+  function addChatMessage(type, text, isFallback) {
     const msgDiv = document.createElement('div');
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     // Convert **bold** markdown to <strong>
     const formatted = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+    const fallbackTag = isFallback
+      ? '<div class="chat-fallback-tag" title="IA en la nube no disponible: respuesta generada localmente por reglas."><i class="fa-solid fa-plug-circle-exclamation"></i> Modo local</div>'
+      : '';
 
     if (type === 'user') {
       msgDiv.className = 'chat-msg chat-user';
@@ -565,6 +584,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="chat-avatar"><i class="fa-solid fa-robot"></i></div>
         <div class="chat-bubble">
           <p>${formatted}</p>
+          ${fallbackTag}
           <button class="chat-copy-btn"><i class="fa-regular fa-copy"></i> Copiar</button>
           <div class="chat-time">${time}</div>
         </div>
@@ -573,6 +593,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     aiChatMessages.appendChild(msgDiv);
     aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+    return msgDiv;
   }
 
   function updateMetaUI(aiMeta) {

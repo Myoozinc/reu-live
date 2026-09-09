@@ -25,6 +25,8 @@ class MediaEngine {
     this.canvasCtx = null;
     this.animFrameId = null;
     this.onVolumeChange = null;
+    this.onAudioChunk = null;
+    this.chunkTimer = null;
     this.isMicMuted = false;
     this.isVideoMuted = false;
     this.micGainNode = null;
@@ -298,7 +300,77 @@ class MediaEngine {
     }
 
     this.isRecording = true;
+    this.startRealtimeChunkRecorder();
     return true;
+  }
+
+  /**
+   * Periodically emits 8-second audio chunks for real-time Whisper transcription (/api/transcribe).
+   * Also separates tracks (Zoom/System audio vs Mic) to assign speaker accurately.
+   */
+  startRealtimeChunkRecorder() {
+    if (this.chunkTimer) clearInterval(this.chunkTimer);
+
+    const emitChunkFromStream = (stream, speakerType) => {
+      if (!stream || stream.getAudioTracks().length === 0 || !this.isRecording) return;
+      let chunks = [];
+      let recorder = null;
+
+      try {
+        recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+      } catch (e) {
+        try { recorder = new MediaRecorder(stream); } catch (e2) { return; }
+      }
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunks.push(e.data);
+      };
+
+      recorder.onstop = () => {
+        if (chunks.length > 0 && this.onAudioChunk && this.isRecording) {
+          const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+          if (blob.size > 2500) {
+            this.onAudioChunk({ blob, speakerType });
+          }
+        }
+      };
+
+      try {
+        recorder.start();
+        setTimeout(() => {
+          if (recorder && recorder.state === 'recording') {
+            try { recorder.stop(); } catch (e) {}
+          }
+        }, 8000);
+      } catch (err) {
+        console.warn('Chunk recorder error:', err);
+      }
+    };
+
+    const recordIntervalSlice = () => {
+      if (!this.isRecording) return;
+
+      // If we have separate displayStream audio (Zoom/system), record it as 'interlocutor'
+      if (this.displayStream && this.displayStream.getAudioTracks().length > 0) {
+        const sysStream = new MediaStream([this.displayStream.getAudioTracks()[0]]);
+        emitChunkFromStream(sysStream, 'interlocutor');
+
+        // Record micStream separately as 'user' (if mic is not muted)
+        if (this.micStream && this.micStream.getAudioTracks().length > 0 && !this.isMicMuted) {
+          const micTrack = this.micStream.getAudioTracks()[0];
+          if (!this.displayStream.getAudioTracks().includes(micTrack)) {
+            const micStreamObj = new MediaStream([micTrack]);
+            emitChunkFromStream(micStreamObj, 'user');
+          }
+        }
+      } else if (this.audioRecordingDest) {
+        // Fallback: record mixed audio stream
+        emitChunkFromStream(this.audioRecordingDest.stream, 'interlocutor');
+      }
+    };
+
+    recordIntervalSlice();
+    this.chunkTimer = setInterval(recordIntervalSlice, 8500);
   }
 
   /**
@@ -473,6 +545,8 @@ class MediaEngine {
   }
 
   stopAll() {
+    if (this.chunkTimer) clearInterval(this.chunkTimer);
+    this.chunkTimer = null;
     if (this.animFrameId) cancelAnimationFrame(this.animFrameId);
     [this.displayStream, this.micStream, this.cameraStream, this.combinedStream].forEach(stream => {
       if (stream) stream.getTracks().forEach(t => t.stop());
