@@ -75,11 +75,21 @@ function saveLocalDB() {
 }
 
 /**
+ * Helper to get KV configuration regardless of environment prefix (KV, STORAGE, etc.)
+ */
+function getKVConfig() {
+  const urlKey = Object.keys(process.env).find(k => k === 'KV_REST_API_URL' || k === 'UPSTASH_REDIS_REST_URL' || k.endsWith('_REST_API_URL'));
+  const tokenKey = Object.keys(process.env).find(k => k === 'KV_REST_API_TOKEN' || k === 'UPSTASH_REDIS_REST_TOKEN' || k.endsWith('_REST_API_TOKEN'));
+  const kvUrl = urlKey ? process.env[urlKey] : null;
+  const kvToken = tokenKey ? process.env[tokenKey] : null;
+  return { kvUrl, kvToken };
+}
+
+/**
  * Helper to interact with Upstash Redis / Vercel KV REST API if configured
  */
 async function executeKV(command, args = []) {
-  const kvUrl = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-  const kvToken = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+  const { kvUrl, kvToken } = getKVConfig();
 
   if (!kvUrl || !kvToken) return null;
 
@@ -111,10 +121,8 @@ class DatabaseEngine {
    * Check if KV is active
    */
   hasCloudKV() {
-    return Boolean(
-      (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) ||
-      (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
-    );
+    const { kvUrl, kvToken } = getKVConfig();
+    return Boolean(kvUrl && kvToken);
   }
 
   /**
