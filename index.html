@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body class="zen-theme">
@@ -36,6 +37,10 @@
           <i class="fa-solid fa-compass-drafting text-cyan"></i>
           <span class="topic-label">Tema:</span>
           <strong id="currentTopicText">En espera de audio...</strong>
+        </div>
+        <div class="intensity-pill" id="intensityPill" title="Intensidad y tono detectados">
+          <i class="fa-solid fa-gauge-high text-emerald" id="intensityIcon"></i>
+          <span id="intensityText">Distendida</span>
         </div>
       </div>
 
@@ -176,6 +181,10 @@
               <i class="fa-solid fa-video"></i>
               <span class="control-label">Video</span>
             </button>
+            <button id="btnFlipCamera" class="control-btn" title="Voltear cámara (Frontal / Posterior)" disabled>
+              <i class="fa-solid fa-camera-rotate"></i>
+              <span class="control-label">Voltear</span>
+            </button>
           </div>
           <div class="audio-mixer-info">
             <div class="channel">
@@ -298,27 +307,61 @@
           </div>
         </details>
 
-        <!-- Expandable: Topics & Agreements -->
+        <!-- Expandable: Analytics, Topics & Agreements -->
         <details class="panel-details" id="analyticsDetails">
           <summary>
-            <i class="fa-solid fa-brain"></i> Temas & Acuerdos
+            <i class="fa-solid fa-chart-pie"></i> Analítica & Acuerdos
           </summary>
           <div class="details-content">
+            <!-- 1. Speaker Intervention Balance & Technical Metrics -->
+            <div class="analytics-card-mini metrics-summary-card">
+              <h4><i class="fa-solid fa-chart-simple text-cyan"></i> Balance de Intervenciones</h4>
+              <div class="speaker-ratio-bar-wrap">
+                <div class="speaker-ratio-labels">
+                  <span id="labelUserRatio"><i class="fa-solid fa-user text-cyan"></i> Tú: 50%</span>
+                  <span id="labelInterlocutorRatio"><i class="fa-solid fa-users text-purple"></i> Interlocutor: 50%</span>
+                </div>
+                <div class="speaker-ratio-bar">
+                  <div class="ratio-fill-user" id="ratioFillUser" style="width: 50%;"></div>
+                  <div class="ratio-fill-interlocutor" id="ratioFillInterlocutor" style="width: 50%;"></div>
+                </div>
+              </div>
+              <div class="technical-kpi-row">
+                <div class="tech-kpi-item">
+                  <span class="tech-kpi-label"><i class="fa-solid fa-gauge text-sky"></i> Ritmo:</span>
+                  <strong id="kpiWpm">0 WPM</strong>
+                </div>
+                <div class="tech-kpi-item">
+                  <span class="tech-kpi-label"><i class="fa-solid fa-microchip text-lavender"></i> Nivel Técnico:</span>
+                  <strong id="kpiTechnicalDepth">General</strong>
+                </div>
+                <div class="tech-kpi-item">
+                  <span class="tech-kpi-label"><i class="fa-solid fa-scale-balanced text-emerald"></i> Dinámica:</span>
+                  <strong id="kpiBalance">Inicio</strong>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. Current Topic -->
             <div class="analytics-card-mini">
               <h4><i class="fa-solid fa-tags text-cyan"></i> Tema Actual</h4>
               <p id="analyticsCurrentTopic">Estrategia General y Coordinación</p>
             </div>
+
+            <!-- 3. Expandable Deep Agreements -->
             <div class="analytics-card-mini">
-              <h4><i class="fa-solid fa-handshake text-emerald"></i> Acuerdos</h4>
-              <ul class="bullet-list" id="agreementsList">
-                <li><i class="fa-solid fa-check text-emerald"></i> Esperando acuerdos...</li>
-              </ul>
+              <h4><i class="fa-solid fa-handshake text-emerald"></i> Acuerdos Formales</h4>
+              <div class="detailed-accordion-list" id="agreementsContainer">
+                <p class="text-dim text-xs">Esperando acuerdos en la reunión...</p>
+              </div>
             </div>
+
+            <!-- 4. Expandable Deep Action Items -->
             <div class="analytics-card-mini">
-              <h4><i class="fa-solid fa-list-check text-amber"></i> Tareas</h4>
-              <ul class="bullet-list" id="actionItemsList">
-                <li><i class="fa-regular fa-square text-amber"></i> Esperando tareas...</li>
-              </ul>
+              <h4><i class="fa-solid fa-list-check text-amber"></i> Tareas y Compromisos</h4>
+              <div class="detailed-accordion-list" id="actionItemsContainer">
+                <p class="text-dim text-xs">Esperando tareas o compromisos...</p>
+              </div>
             </div>
           </div>
         </details>

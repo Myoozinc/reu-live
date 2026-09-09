@@ -60,6 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const modalTranscriptStream = document.getElementById('modalTranscriptStream');
   const btnCopyTranscript = document.getElementById('btnCopyTranscript');
   const btnDownloadMarkdown = document.getElementById('btnDownloadMarkdown');
+  const btnDownloadPdf = document.getElementById('btnDownloadPdf');
 
   // ==========================================
   // 1. THEME MANAGEMENT
@@ -390,6 +391,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================
   // 7. TRANSCRIPT MODAL VIEWER
   // ==========================================
+  // ==========================================
+  // 7. TRANSCRIPT MODAL VIEWER & EXECUTIVE PDF
+  // ==========================================
   function openMeetingModal(meetingId) {
     const meeting = meetingsData.find(m => m.id === meetingId);
     if (!meeting) return;
@@ -397,11 +401,25 @@ document.addEventListener('DOMContentLoaded', () => {
     currentViewingMeeting = meeting;
 
     modalMeetingTopic.textContent = meeting.topic || 'Reunión sin título';
-    modalMeetingMeta.textContent = `${meeting.dateFormatted || new Date(meeting.timestamp).toLocaleString()} • Duración: ${meeting.durationFormatted || '00:00'} • Sentimiento: ${meeting.sentiment || 'Neutral'}`;
+    const toneText = meeting.tone ? ` • Tono: ${meeting.tone}` : '';
+    const intensityText = meeting.intensity ? ` • Intensidad: ${meeting.intensity}` : '';
+    modalMeetingMeta.textContent = `${meeting.dateFormatted || new Date(meeting.timestamp).toLocaleString()} • Duración: ${meeting.durationFormatted || '00:00'} • Sentimiento: ${meeting.sentiment || 'Neutral'}${toneText}${intensityText}`;
 
     // Agreements
     if (modalAgreementsList) {
-      if (meeting.agreements && meeting.agreements.length > 0) {
+      const detailed = meeting.detailedAgreements && meeting.detailedAgreements.length > 0
+        ? meeting.detailedAgreements
+        : null;
+
+      if (detailed) {
+        modalAgreementsList.innerHTML = detailed.map(a => `
+          <li style="margin-bottom: 6px;">
+            <i class="fa-solid fa-check text-emerald"></i>
+            <strong>${a.title}</strong>
+            <span class="text-xs text-dim">(${a.speaker || 'Participante'} • ${a.priority || 'Estratégica'})</span>
+          </li>
+        `).join('');
+      } else if (meeting.agreements && meeting.agreements.length > 0) {
         modalAgreementsList.innerHTML = meeting.agreements.map(a => `<li><i class="fa-solid fa-check text-emerald"></i> ${a}</li>`).join('');
       } else {
         modalAgreementsList.innerHTML = '<li class="text-muted">Sin acuerdos detectados</li>';
@@ -410,7 +428,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Action Items
     if (modalActionItemsList) {
-      if (meeting.actionItems && meeting.actionItems.length > 0) {
+      const detailed = meeting.detailedActionItems && meeting.detailedActionItems.length > 0
+        ? meeting.detailedActionItems
+        : null;
+
+      if (detailed) {
+        modalActionItemsList.innerHTML = detailed.map(t => `
+          <li style="margin-bottom: 6px;">
+            <i class="fa-regular fa-square text-amber"></i>
+            <strong>${t.title}</strong>
+            <span class="text-xs text-dim">(${t.speaker || 'Asignado'} • ${t.priority || 'Media'})</span>
+          </li>
+        `).join('');
+      } else if (meeting.actionItems && meeting.actionItems.length > 0) {
         modalActionItemsList.innerHTML = meeting.actionItems.map(t => `<li><i class="fa-regular fa-square text-amber"></i> ${t}</li>`).join('');
       } else {
         modalActionItemsList.innerHTML = '<li class="text-muted">Sin tareas pendientes</li>';
@@ -464,6 +494,177 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Executive PDF Generator
+  const generateExecutivePDF = (meeting) => {
+    if (!meeting) return;
+
+    const container = document.createElement('div');
+    container.className = 'executive-pdf-container';
+    container.id = 'adminPdfExportDoc';
+
+    const speakersList = meeting.metrics && meeting.metrics.speakers
+      ? Object.keys(meeting.metrics.speakers).join(', ')
+      : (meeting.transcript && meeting.transcript.length > 0
+          ? [...new Set(meeting.transcript.map(t => t.speaker))].join(', ')
+          : 'Participantes');
+
+    const agreements = meeting.detailedAgreements && meeting.detailedAgreements.length > 0
+      ? meeting.detailedAgreements
+      : (meeting.agreements || []).map((a, i) => ({
+          id: `agr_${i}`,
+          title: typeof a === 'string' ? a : (a.title || a.text || 'Acuerdo'),
+          speaker: 'Participante',
+          timestamp: 'En sesión',
+          priority: 'Estratégica',
+          status: 'Compromiso en firme'
+        }));
+
+    const actionItems = meeting.detailedActionItems && meeting.detailedActionItems.length > 0
+      ? meeting.detailedActionItems
+      : (meeting.actionItems || []).map((t, i) => ({
+          id: `act_${i}`,
+          title: typeof t === 'string' ? t : (t.title || t.text || 'Tarea'),
+          speaker: 'Asignado',
+          timestamp: 'Pendiente',
+          priority: 'Media',
+          status: 'Por ejecutar'
+        }));
+
+    const m = meeting.metrics || {
+      userRatio: 50,
+      interlocutorRatio: 50,
+      wpm: 120,
+      technicalDepth: 'General / Estratégica',
+      conversationalBalance: 'Equilibrado'
+    };
+
+    container.innerHTML = `
+      <div class="pdf-header">
+        <div class="pdf-brand">
+          <h2>ReuLive <span style="color: #0284c7;">AI</span></h2>
+          <p>Acta & Informe Ejecutivo de Reunión (Copia Administrativa)</p>
+        </div>
+        <div class="pdf-meta-box">
+          <div><strong>ID Sesión:</strong> ${meeting.id || 'N/A'}</div>
+          <div><strong>Fecha:</strong> ${meeting.dateFormatted || new Date(meeting.timestamp || Date.now()).toLocaleDateString()}</div>
+          <div><strong>Duración:</strong> ${meeting.durationFormatted || '00:00'}</div>
+        </div>
+      </div>
+
+      <div class="pdf-title-banner">
+        <h3>${meeting.topic || 'Coordinación General'}</h3>
+        <p><strong>Participantes:</strong> ${speakersList} &nbsp;|&nbsp; <strong>Tono:</strong> ${meeting.tone || 'Coordinación'} &nbsp;|&nbsp; <strong>Intensidad:</strong> ${meeting.intensity || 'Productiva'}</p>
+      </div>
+
+      <div class="pdf-kpi-grid">
+        <div class="pdf-kpi-card">
+          <span>Balance de Voz</span>
+          <strong>Tú ${m.userRatio}% / Otros ${m.interlocutorRatio}%</strong>
+        </div>
+        <div class="pdf-kpi-card">
+          <span>Ritmo de Habla</span>
+          <strong>${m.wpm || 0} WPM</strong>
+        </div>
+        <div class="pdf-kpi-card">
+          <span>Nivel Técnico</span>
+          <strong>${m.technicalDepth || 'General'}</strong>
+        </div>
+        <div class="pdf-kpi-card">
+          <span>Intervenciones</span>
+          <strong>${meeting.interventionsCount || (meeting.transcript ? meeting.transcript.length : 0)} turnos</strong>
+        </div>
+      </div>
+
+      <div class="pdf-section-title">
+        <i class="fa-solid fa-handshake"></i> Acuerdos Formales & Compromisos (${agreements.length})
+      </div>
+      <div class="pdf-agreements-wrap">
+        ${agreements.length > 0 ? agreements.map((a, idx) => `
+          <div class="pdf-agreement-item">
+            <div class="pdf-item-title">#${idx + 1} ${a.title}</div>
+            <div class="pdf-item-meta">
+              <span><strong>Responsable:</strong> ${a.speaker || 'No especificado'}</span>
+              <span><strong>Momento:</strong> ${a.timestamp || 'En sesión'}</span>
+              <span><strong>Prioridad:</strong> ${a.priority || 'Estratégica'}</span>
+              <span><strong>Estado:</strong> ${a.status || 'Compromiso en firme'}</span>
+            </div>
+          </div>
+        `).join('') : '<p style="font-size: 8.5pt; color: #64748b; font-style: italic; margin: 4px 0;">Sin acuerdos formales registrados.</p>'}
+      </div>
+
+      <div class="pdf-section-title" style="margin-top: 18px;">
+        <i class="fa-solid fa-list-check"></i> Plan de Acción & Tareas (${actionItems.length})
+      </div>
+      <div class="pdf-actions-wrap">
+        ${actionItems.length > 0 ? actionItems.map((t, idx) => `
+          <div class="pdf-agreement-item task">
+            <div class="pdf-item-title">#${idx + 1} ${t.title}</div>
+            <div class="pdf-item-meta">
+              <span><strong>Asignado a:</strong> ${t.speaker || 'Pendiente'}</span>
+              <span><strong>Prioridad:</strong> ${t.priority || 'Media'}</span>
+              <span><strong>Estado:</strong> ${t.status || 'Pendiente'}</span>
+            </div>
+          </div>
+        `).join('') : '<p style="font-size: 8.5pt; color: #64748b; font-style: italic; margin: 4px 0;">Sin tareas pendientes registradas.</p>'}
+      </div>
+
+      <div class="pdf-section-title" style="margin-top: 18px;">
+        <i class="fa-solid fa-comments"></i> Transcripción Oficial de la Sesión
+      </div>
+      <div class="pdf-transcript-wrap">
+        ${(meeting.transcript || []).length > 0 ? (meeting.transcript || []).map(t => `
+          <div class="pdf-transcript-line">
+            <span class="time">[${t.timestamp || '00:00'}]</span>
+            <span class="speaker">${t.speaker}:</span>
+            <span class="text">${t.text}</span>
+          </div>
+        `).join('') : '<p style="font-size: 8.5pt; color: #64748b; font-style: italic; margin: 4px 0;">Sin intervenciones de audio registradas.</p>'}
+      </div>
+
+      <div class="pdf-footer">
+        <span>ReuLive AI Copilot — Documento oficial y confidencial de reunión</span>
+        <span>Generado el ${new Date().toLocaleString()}</span>
+      </div>
+    `;
+
+    document.body.appendChild(container);
+
+    if (window.html2pdf) {
+      const filename = `ReuLive-Acta-Admin-${meeting.id || Date.now()}.pdf`;
+      const opt = {
+        margin: [10, 10, 10, 10],
+        filename: filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, logging: false },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      window.html2pdf().set(opt).from(container).save().then(() => {
+        if (container.parentNode) document.body.removeChild(container);
+      }).catch(err => {
+        console.warn('html2pdf generation error, using window.print:', err);
+        window.print();
+        setTimeout(() => {
+          if (container.parentNode) document.body.removeChild(container);
+        }, 1000);
+      });
+    } else {
+      window.print();
+      setTimeout(() => {
+        if (container.parentNode) document.body.removeChild(container);
+      }, 1000);
+    }
+  };
+
+  // Download PDF report button
+  if (btnDownloadPdf) {
+    btnDownloadPdf.addEventListener('click', () => {
+      if (currentViewingMeeting) {
+        generateExecutivePDF(currentViewingMeeting);
+      }
+    });
+  }
+
   // Download markdown report
   if (btnDownloadMarkdown) {
     btnDownloadMarkdown.addEventListener('click', () => {
@@ -474,8 +675,10 @@ document.addEventListener('DOMContentLoaded', () => {
       md += `**Fecha:** ${m.dateFormatted || m.timestamp}\n`;
       md += `**Tema:** ${m.topic}\n`;
       md += `**Duración:** ${m.durationFormatted}\n`;
-      md += `**Sentimiento:** ${m.sentiment}\n\n`;
-      md += `---\n\n## 🤝 Acuerdos\n`;
+      md += `**Sentimiento:** ${m.sentiment}\n`;
+      if (m.tone) md += `**Tono:** ${m.tone}\n`;
+      if (m.intensity) md += `**Intensidad:** ${m.intensity}\n`;
+      md += `\n---\n\n## 🤝 Acuerdos\n`;
       (m.agreements || []).forEach(a => md += `- ${a}\n`);
       md += `\n## 📋 Tareas Pendientes\n`;
       (m.actionItems || []).forEach(t => md += `- ${t}\n`);

@@ -57,10 +57,15 @@ class DBEngine {
       durationFormatted: meeting.durationFormatted || '00:00',
       topic: meeting.topic || 'Coordinación General',
       sentiment: meeting.sentiment || 'Neutral',
+      intensity: meeting.intensity || 'Media / Productiva',
+      tone: meeting.tone || 'Coordinación General',
       interventionsCount: meeting.interventionsCount || (meeting.transcript ? meeting.transcript.length : 0),
+      metrics: meeting.metrics || null,
       transcript: meeting.transcript || [],
       agreements: meeting.agreements || [],
+      detailedAgreements: meeting.detailedAgreements || [],
       actionItems: meeting.actionItems || [],
+      detailedActionItems: meeting.detailedActionItems || [],
       hasVideo: Boolean(meeting.hasVideo)
     };
 

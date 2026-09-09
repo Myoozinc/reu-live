@@ -30,6 +30,7 @@ class MediaEngine {
     this.isMicMuted = false;
     this.isVideoMuted = false;
     this.micGainNode = null;
+    this.currentFacingMode = 'user';
   }
 
   initCanvas(canvasElement) {
@@ -56,29 +57,30 @@ class MediaEngine {
 
   /**
    * UNIFIED CAPTURE: One method that captures everything based on device
-   * Desktop: screen share (Zoom window) + system audio + mic
-   * Mobile: camera + mic (screen share not supported on mobile browsers)
+   * Desktop: screen share (Zoom window) + system audio + mic (or camera fallback)
+   * Mobile/Tablet: default to Selfie Camera (user) + mic (with screen share support if available)
    */
-  async startUnifiedCapture() {
+  async startUnifiedCapture(preferredSource = 'auto') {
     const mobile = this.isMobile();
     let hasVideo = false;
     let sourceLabel = '';
+    const canShareScreen = navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function';
 
-    if (!mobile) {
-      // DESKTOP: Try screen/window capture with system audio
+    if (!mobile || (preferredSource === 'screen' && canShareScreen)) {
+      // DESKTOP or Screen-capable tablet: Try screen/window capture with system audio
       try {
         this.displayStream = await navigator.mediaDevices.getDisplayMedia({
           video: { displaySurface: 'window', cursor: 'always' },
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
         });
         hasVideo = this.displayStream.getVideoTracks().length > 0;
-        sourceLabel = 'Pantalla/Zoom + Audio Sistema';
+        sourceLabel = 'Pantalla + Audio Sistema';
       } catch (err) {
         console.warn('Screen share denied or unavailable:', err);
         this.displayStream = null;
       }
 
-      // Also capture mic separately on desktop
+      // Also capture mic separately
       try {
         this.micStream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
@@ -87,30 +89,30 @@ class MediaEngine {
         console.warn('Mic not available:', err);
       }
 
-      // If screen share failed, try camera as fallback
+      // If screen share failed or wasn't chosen, try camera as fallback (selfie front by default)
       if (!this.displayStream) {
         try {
           this.cameraStream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+            video: { facingMode: { ideal: this.currentFacingMode }, width: { ideal: 1280 }, height: { ideal: 720 } },
             audio: { echoCancellation: true, noiseSuppression: true }
           });
           hasVideo = true;
           this.micStream = this.cameraStream; // audio is included
-          sourceLabel = 'Cámara + Micrófono';
+          sourceLabel = this.currentFacingMode === 'user' ? 'Cámara Selfie + Micrófono' : 'Cámara Trasera + Micrófono';
         } catch (err) {
           console.warn('Camera fallback failed:', err);
         }
       }
     } else {
-      // MOBILE: Camera + Mic (getDisplayMedia not supported on mobile)
+      // MOBILE / TABLET: Front Selfie Camera + Mic by default
       try {
         this.cameraStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+          video: { facingMode: { ideal: this.currentFacingMode }, width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
         });
         hasVideo = true;
         this.micStream = this.cameraStream;
-        sourceLabel = 'Cámara + Micrófono';
+        sourceLabel = this.currentFacingMode === 'user' ? 'Cámara Selfie + Micrófono' : 'Cámara Trasera + Micrófono';
       } catch (err) {
         // Fallback: mic only
         try {
@@ -572,6 +574,46 @@ class MediaEngine {
     const vt = this.getVideoTrack();
     if (vt) vt.enabled = true;
     this.isVideoMuted = false;
+  }
+
+  /**
+   * Flip between front (selfie) and back camera on mobile/tablet/desktop
+   */
+  async flipCamera() {
+    this.currentFacingMode = this.currentFacingMode === 'user' ? 'environment' : 'user';
+    if (!this.cameraStream) {
+      return { facingMode: this.currentFacingMode, track: null };
+    }
+
+    try {
+      const oldVideoTrack = this.cameraStream.getVideoTracks()[0];
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: this.currentFacingMode }, width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      const newVideoTrack = newStream.getVideoTracks()[0];
+
+      if (newVideoTrack) {
+        if (oldVideoTrack) {
+          oldVideoTrack.stop();
+          this.cameraStream.removeTrack(oldVideoTrack);
+        }
+        this.cameraStream.addTrack(newVideoTrack);
+
+        if (this.combinedStream) {
+          const combinedVt = this.combinedStream.getVideoTracks()[0];
+          if (combinedVt) {
+            this.combinedStream.removeTrack(combinedVt);
+          }
+          this.combinedStream.addTrack(newVideoTrack);
+        }
+        return { facingMode: this.currentFacingMode, track: newVideoTrack, stream: this.cameraStream };
+      }
+    } catch (err) {
+      console.warn('Could not flip camera:', err);
+      // Revert state
+      this.currentFacingMode = this.currentFacingMode === 'user' ? 'environment' : 'user';
+    }
+    return { facingMode: this.currentFacingMode, track: null };
   }
 
   stopAll() {

@@ -7,15 +7,35 @@ class AIEngine {
   constructor() {
     this.currentTopic = 'En espera de audio de la reunión...';
     this.agreements = [];
+    this.detailedAgreements = [];
     this.actionItems = [];
+    this.detailedActionItems = [];
     this.sentiment = 'Neutral';
+    this.meetingIntensity = 'Baja / Distendida';
+    this.meetingTone = 'Coordinación General';
     this.topicHistory = [];
     this.lastInsightChunkCount = 0;
-    this.insightInterval = 5; // Generate auto-insight every N transcript chunks
+    this.insightInterval = 5;
+    this.detailedMetrics = null;
+  }
+
+  reset() {
+    this.currentTopic = 'En espera de audio de la reunión...';
+    this.agreements = [];
+    this.detailedAgreements = [];
+    this.actionItems = [];
+    this.detailedActionItems = [];
+    this.sentiment = 'Neutral';
+    this.meetingIntensity = 'Baja / Distendida';
+    this.meetingTone = 'Coordinación General';
+    this.topicHistory = [];
+    this.lastInsightChunkCount = 0;
+    this.detailedMetrics = null;
+    console.log('[AIEngine] Estado de IA y analítica reiniciados limpiamente.');
   }
 
   /**
-   * Process transcript and extract metadata (topic, sentiment, items)
+   * Process transcript and extract metadata (topic, sentiment, intensity, tone, items, metrics)
    * Called on every new transcript chunk
    */
   processTranscript(transcriptHistory) {
@@ -36,13 +56,20 @@ class AIEngine {
     }
 
     this.sentiment = this.analyzeSentiment(recentText);
+    this.analyzeIntensityAndTone(transcriptHistory);
     this.extractItems(transcriptHistory);
+    const metrics = this.calculateDetailedMetrics(transcriptHistory);
 
     return {
       topic: this.currentTopic,
       sentiment: this.sentiment,
+      intensity: this.meetingIntensity,
+      tone: this.meetingTone,
       agreements: this.agreements,
-      actionItems: this.actionItems
+      detailedAgreements: this.detailedAgreements,
+      actionItems: this.actionItems,
+      detailedActionItems: this.detailedActionItems,
+      metrics
     };
   }
 
@@ -91,14 +118,34 @@ class AIEngine {
   getLocalCopilotFallback(history) {
     const lastChunk = history && history.length > 0 ? history[history.length - 1] : null;
     const text = lastChunk ? lastChunk.text : '';
+    const speaker = lastChunk ? lastChunk.speaker : 'el interlocutor';
     const snippet = text ? this.getSubjectSnippet(text) : 'el tema actual';
+
+    let directResponse = `Totalmente de acuerdo con lo que acaba de plantear ${speaker} sobre ${snippet}.`;
+    let proposal = `Propongo consolidar los puntos principales de ${snippet} para llegar a un acuerdo.`;
+    let question = `¿Qué opinan ustedes sobre este aspecto de ${snippet}?`;
+
+    // Adapt by Intensity
+    if (this.meetingIntensity && (this.meetingIntensity.includes('Alta') || this.meetingIntensity.includes('Crítica'))) {
+      directResponse = `Entiendo la importancia y urgencia de lo que menciona ${speaker}. Podemos priorizarlo y darle salida inmediata.`;
+      proposal = `Sugiero aislar este punto crítico sobre ${snippet} y definir los responsables directos para resolverlo hoy.`;
+      question = `¿Cuál es el bloqueo principal ahora mismo y qué recurso específico se necesita para destrabarlo?`;
+    } else if (this.meetingTone === 'Técnico & Arquitectura') {
+      directResponse = `Alineado con el planteamiento técnico sobre ${snippet}. Es una solución sólida y mantenible.`;
+      proposal = `Propongo validar esta integración en staging antes de promoverla a producción para evitar regresiones.`;
+      question = `¿Cuáles son los requerimientos de latencia o dependencias críticas para implementar este cambio?`;
+    } else if (this.meetingTone === 'Negociación & Acuerdos') {
+      directResponse = `El planteamiento de ${speaker} sobre ${snippet} es un buen punto de partida. Busquemos un acuerdo ganar-ganar.`;
+      proposal = `Propongo un esquema de trabajo por hitos verificables para asegurar el cumplimiento de ambas partes.`;
+      question = `¿Qué condiciones o plazos consideran prioritarios para cerrar este acuerdo en esta misma llamada?`;
+    }
 
     return {
       topic: this.currentTopic || 'Conversación en vivo',
-      summary: text ? `Debatiendo sobre ${snippet}` : 'En espera de intervenciones en la reunión...',
-      direct_response: text ? `Totalmente de acuerdo con lo que se acaba de plantear sobre ${snippet}.` : 'Listo para dar seguimiento a los temas de la reunión.',
-      proposal: text ? `Propongo revisar los puntos principales de ${snippet} para llegar a un acuerdo.` : 'Propongo revisar los objetivos principales antes de avanzar.',
-      question: text ? `¿Qué opinan ustedes sobre este aspecto de ${snippet}?` : '¿Hay algún tema prioritario que debamos tratar primero?',
+      summary: text ? `Debatiendo sobre ${snippet} (${this.meetingTone} · ${this.meetingIntensity})` : 'En espera de intervenciones en la reunión...',
+      direct_response: directResponse,
+      proposal: proposal,
+      question: question,
       source: 'local'
     };
   }
@@ -419,20 +466,243 @@ class AIEngine {
   }
 
   extractItems(history) {
-    const agreementsSet = new Set(this.agreements);
-    const actionItemsSet = new Set(this.actionItems);
+    const agreementKw = ['acordamos', 'confirmado', 'definimos', 'quedamos en', 'aprobado', 'cerramos', 'pactado'];
+    const actionKw = ['necesitamos', 'hay que', 'tarea', 'entregar', 'pendiente', 'completar', 'responsable', 'asignar'];
 
-    const agreementKw = ['acordamos', 'confirmado', 'definimos', 'quedamos en', 'aprobado'];
-    const actionKw = ['necesitamos', 'hay que', 'tarea', 'entregar', 'pendiente', 'completar'];
+    const newAgreements = [];
+    const newDetailedAgreements = [];
+    const newActionItems = [];
+    const newDetailedActionItems = [];
 
-    history.slice(-10).forEach(item => {
+    history.forEach((item, index) => {
       const lower = item.text.toLowerCase();
-      if (agreementKw.some(k => lower.includes(k))) agreementsSet.add(`${item.speaker}: ${item.text}`);
-      if (actionKw.some(k => lower.includes(k))) actionItemsSet.add(`${item.speaker}: ${item.text}`);
+      const isAgreement = agreementKw.some(k => lower.includes(k));
+      const isAction = actionKw.some(k => lower.includes(k));
+
+      if (isAgreement) {
+        const textSummary = `${item.speaker}: ${item.text}`;
+        newAgreements.push(textSummary);
+
+        let priority = 'Estratégica';
+        if (lower.includes('inmediato') || lower.includes('hoy') || lower.includes('ya') || lower.includes('urgente')) {
+          priority = 'Alta / Inmediata';
+        } else if (lower.includes('semana') || lower.includes('luego') || lower.includes('próximo')) {
+          priority = 'Media / Operativa';
+        }
+
+        newDetailedAgreements.push({
+          id: `agr_${index}_${item.id || Date.now()}`,
+          title: item.text.length > 70 ? item.text.substring(0, 70) + '...' : item.text,
+          speaker: item.speaker,
+          timestamp: item.timestamp || '00:00',
+          priority: priority,
+          context: item.text,
+          status: 'Compromiso en firme'
+        });
+      }
+
+      if (isAction) {
+        const textSummary = `${item.speaker}: ${item.text}`;
+        newActionItems.push(textSummary);
+
+        let priority = 'Media / Operativa';
+        if (lower.includes('urgente') || lower.includes('asap') || lower.includes('crítico')) {
+          priority = 'Alta / Crítica';
+        }
+
+        newDetailedActionItems.push({
+          id: `act_${index}_${item.id || Date.now()}`,
+          title: item.text.length > 70 ? item.text.substring(0, 70) + '...' : item.text,
+          speaker: item.speaker,
+          timestamp: item.timestamp || '00:00',
+          priority: priority,
+          context: item.text,
+          status: 'Pendiente de ejecución'
+        });
+      }
     });
 
-    this.agreements = Array.from(agreementsSet).slice(-8);
-    this.actionItems = Array.from(actionItemsSet).slice(-8);
+    this.agreements = newAgreements.slice(-10);
+    this.detailedAgreements = newDetailedAgreements.slice(-10);
+    this.actionItems = newActionItems.slice(-10);
+    this.detailedActionItems = newDetailedActionItems.slice(-10);
+  }
+
+  /**
+   * Technical Analytical Metrics & Speaker Interventions Breakdown
+   * Computes Tú vs Interlocutores participation, words, WPM, and technical depth.
+   */
+  calculateDetailedMetrics(history = []) {
+    if (!history || history.length === 0) {
+      return {
+        totalInterventions: 0,
+        userInterventions: 0,
+        interlocutorInterventions: 0,
+        userRatio: 50,
+        interlocutorRatio: 50,
+        userWords: 0,
+        interlocutorWords: 0,
+        totalWords: 0,
+        wpm: 0,
+        technicalDepth: 'General / Estratégica',
+        technicalTermsFound: [],
+        technicalScore: 0,
+        conversationalBalance: 'Inicio de sesión',
+        speakers: {}
+      };
+    }
+
+    let userInterventions = 0;
+    let interlocutorInterventions = 0;
+    let userWords = 0;
+    let interlocutorWords = 0;
+    const speakers = {};
+
+    history.forEach(chunk => {
+      const words = (chunk.text || '').trim().split(/\s+/).filter(w => w.length > 0);
+      const wordCount = words.length;
+      const isUser = chunk.speakerType === 'user';
+
+      if (isUser) {
+        userInterventions++;
+        userWords += wordCount;
+      } else {
+        interlocutorInterventions++;
+        interlocutorWords += wordCount;
+      }
+
+      const spk = chunk.speaker || (isUser ? 'Tú' : 'Interlocutor');
+      if (!speakers[spk]) {
+        speakers[spk] = { name: spk, count: 0, words: 0, isUser };
+      }
+      speakers[spk].count++;
+      speakers[spk].words += wordCount;
+    });
+
+    const totalWords = userWords + interlocutorWords;
+    const userRatio = totalWords > 0 ? Math.round((userWords / totalWords) * 100) : 50;
+    const interlocutorRatio = 100 - userRatio;
+
+    // Estimate minutes elapsed
+    let elapsedMinutes = 1;
+    if (history.length >= 2) {
+      const firstTime = history[0].id || 0;
+      const lastTime = history[history.length - 1].id || 0;
+      if (lastTime > firstTime) {
+        elapsedMinutes = Math.max(1, (lastTime - firstTime) / 60000);
+      }
+    }
+    const wpm = Math.round(totalWords / elapsedMinutes);
+
+    // Technical depth analysis
+    const technicalVocabulary = [
+      'arquitectura', 'backend', 'frontend', 'api', 'endpoint', 'servidor', 'base de datos', 'despliegue',
+      'deploy', 'github', 'vercel', 'producción', 'testing', 'código', 'seguridad', 'latencia',
+      'algoritmo', 'token', 'autenticación', 'ssl', 'kpi', 'conversión', 'roi', 'ebitda', 'sprint',
+      'roadmap', 'infraestructura', 'nube', 'docker', 'ci/cd', 'microservicio', 'staging', 'queries',
+      'framework', 'librería', 'compilación', 'bug', 'cache', 'devops', 'react', 'node', 'redis'
+    ];
+
+    const fullTextLower = history.map(t => t.text).join(' ').toLowerCase();
+    const termsFound = technicalVocabulary.filter(term => fullTextLower.includes(term));
+    const termCount = termsFound.length;
+
+    let technicalDepth = 'General / Estratégica';
+    if (termCount >= 5) {
+      technicalDepth = 'Alta / Especializada';
+    } else if (termCount >= 2) {
+      technicalDepth = 'Media / Aplicada';
+    }
+
+    // Conversational Balance
+    let conversationalBalance = 'Equilibrado / Diálogo Fluido';
+    if (userRatio > 65) {
+      conversationalBalance = 'Tú Lideras la Exposición';
+    } else if (userRatio < 35) {
+      conversationalBalance = 'Escucha Activa / Interlocutor Presenta';
+    }
+
+    const metrics = {
+      totalInterventions: history.length,
+      userInterventions,
+      interlocutorInterventions,
+      userRatio,
+      interlocutorRatio,
+      userWords,
+      interlocutorWords,
+      totalWords,
+      wpm,
+      technicalDepth,
+      technicalTermsFound: termsFound,
+      technicalScore: Math.min(100, Math.round((termCount / 8) * 100)),
+      conversationalBalance,
+      speakers
+    };
+
+    this.detailedMetrics = metrics;
+    return metrics;
+  }
+
+  /**
+   * Meeting Intensity & Tone Detection
+   * Evaluates conversational tension, urgency, and semantic domain.
+   */
+  analyzeIntensityAndTone(history = []) {
+    if (!history || history.length === 0) {
+      this.meetingIntensity = 'Baja / Distendida';
+      this.meetingTone = 'Coordinación General';
+      return { intensity: this.meetingIntensity, tone: this.meetingTone };
+    }
+
+    const recent = history.slice(-8);
+    const recentText = recent.map(t => t.text).join(' ').toLowerCase();
+    const fullText = history.map(t => t.text).join(' ').toLowerCase();
+
+    // Urgent / tension keywords
+    const urgentWords = ['urgente', 'problema', 'error', 'fallo', 'crítico', 'bloqueado', 'imposible', 'retraso', 'riesgo', 'cuidado', 'grave', 'preocupa', 'cancelar', 'tensión'];
+    const calmWords = ['excelente', 'perfecto', 'tranquilo', 'de acuerdo', 'bien', 'claro', 'gracias', 'avance', 'éxito'];
+
+    const urgentCount = urgentWords.filter(w => recentText.includes(w)).length;
+    const calmCount = calmWords.filter(w => recentText.includes(w)).length;
+
+    const exclamations = (recentText.match(/[!¡]/g) || []).length;
+    const questions = (recentText.match(/[?¿]/g) || []).length;
+
+    // Intensity scale
+    if (urgentCount >= 3 || (urgentCount >= 2 && exclamations >= 2)) {
+      this.meetingIntensity = 'Crítica / Resolución Urgente';
+    } else if (urgentCount >= 1 || questions >= 4) {
+      this.meetingIntensity = 'Alta / Negociación Activa';
+    } else if (calmCount >= 2) {
+      this.meetingIntensity = 'Baja / Distendida y Fluida';
+    } else {
+      this.meetingIntensity = 'Media / Productiva';
+    }
+
+    // Tone clusters
+    const toneClusters = [
+      { name: 'Negociación & Acuerdos', keys: ['precio', 'presupuesto', 'costo', 'propuesta', 'contrato', 'margen', 'descuento', 'términos', 'cerrar', 'acuerdo'] },
+      { name: 'Técnico & Arquitectura', keys: ['api', 'código', 'bug', 'deploy', 'base de datos', 'servidor', 'arquitectura', 'desarrollo', 'infraestructura', 'github', 'vercel'] },
+      { name: 'Estratégico / Decisión', keys: ['visión', 'objetivo', 'plan', 'hitos', 'impacto', 'estrategia', 'decisión', 'dirección', 'roadmap'] },
+      { name: 'Creativo & Diseño', keys: ['idea', 'diseño', 'interfaz', 'ux', 'experiencia', 'innovación', 'concepto', 'estilo', 'colores'] },
+      { name: 'Operativo & Seguimiento', keys: ['tarea', 'sprint', 'semana', 'pendiente', 'estado', 'avance', 'revisión', 'entregable'] }
+    ];
+
+    let detectedTone = 'Coordinación General';
+    let maxMatches = 0;
+    for (const cluster of toneClusters) {
+      const matches = cluster.keys.filter(k => fullText.includes(k)).length;
+      if (matches > maxMatches) {
+        maxMatches = matches;
+        detectedTone = cluster.name;
+      }
+    }
+    this.meetingTone = detectedTone;
+
+    return {
+      intensity: this.meetingIntensity,
+      tone: this.meetingTone
+    };
   }
 }
 

@@ -54,9 +54,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const subtitlesText = document.getElementById('subtitlesText');
   const subtitlesOverlay = document.getElementById('subtitlesOverlay');
 
-  // Media Controls (Mute buttons)
+  // Media Controls (Mute & Camera Flip buttons)
   const btnMuteMic = document.getElementById('btnMuteMic');
   const btnMuteVideo = document.getElementById('btnMuteVideo');
+  const btnFlipCamera = document.getElementById('btnFlipCamera');
+
+  // Intensity Pill
+  const intensityPill = document.getElementById('intensityPill');
+  const intensityText = document.getElementById('intensityText');
+  const intensityIcon = document.getElementById('intensityIcon');
 
   // Speaker Switcher
   const btnSpeakerUser = document.getElementById('btnSpeakerUser');
@@ -83,10 +89,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnClearTranscript = document.getElementById('btnClearTranscript');
   const speakerNameInput = document.getElementById('speakerNameInput');
 
-  // Analytics
+  // Analytics & Deep Accordions
   const analyticsCurrentTopic = document.getElementById('analyticsCurrentTopic');
-  const agreementsList = document.getElementById('agreementsList');
-  const actionItemsList = document.getElementById('actionItemsList');
+  const labelUserRatio = document.getElementById('labelUserRatio');
+  const labelInterlocutorRatio = document.getElementById('labelInterlocutorRatio');
+  const ratioFillUser = document.getElementById('ratioFillUser');
+  const ratioFillInterlocutor = document.getElementById('ratioFillInterlocutor');
+  const kpiWpm = document.getElementById('kpiWpm');
+  const kpiTechnicalDepth = document.getElementById('kpiTechnicalDepth');
+  const kpiBalance = document.getElementById('kpiBalance');
+  const agreementsContainer = document.getElementById('agreementsContainer');
+  const actionItemsContainer = document.getElementById('actionItemsContainer');
 
   // ===== Theme Management (Light / Dark Mode) =====
   const initTheme = () => {
@@ -230,6 +243,58 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  // Smart Name & Nickname Diarization Callback
+  sttEngine.onSpeakerNameUpdated = (role, newName, nickname, history) => {
+    if (role === 'interlocutor') {
+      if (speakerNameInput) speakerNameInput.value = newName;
+      if (btnSpeakerInterlocutor) {
+        btnSpeakerInterlocutor.innerHTML = `<i class="fa-solid fa-users text-purple"></i> ${newName.split(' ')[0]}`;
+      }
+    } else if (role === 'user') {
+      if (btnSpeakerUser) {
+        btnSpeakerUser.innerHTML = `<i class="fa-solid fa-user text-cyan"></i> ${newName.split(' ')[0]}`;
+      }
+    }
+
+    // Refresh rendered transcript stream speaker tags retroactively
+    const streamItems = transcriptStream.querySelectorAll('.stream-item:not(.system-msg)');
+    if (streamItems.length > 0 && history && history.length > 0) {
+      streamItems.forEach((item, idx) => {
+        const chunk = history[idx];
+        if (chunk) {
+          const speakerSpan = item.querySelector('.speaker span');
+          if (speakerSpan) {
+            const icon = chunk.speakerType === 'user' ? 'fa-solid fa-user' : 'fa-solid fa-desktop';
+            speakerSpan.innerHTML = `<i class="${icon}"></i> ${chunk.speaker}`;
+          }
+        }
+      });
+    }
+
+    updateLiveCopilotHUD();
+  };
+
+  // Camera Flip Button Handler
+  if (btnFlipCamera) {
+    btnFlipCamera.addEventListener('click', async () => {
+      if (!isActive) return;
+      btnFlipCamera.disabled = true;
+      btnFlipCamera.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span class="control-label">...</span>';
+
+      try {
+        const res = await mediaEngine.flipCamera();
+        if (res && res.stream) {
+          captureVideo.srcObject = res.stream;
+        }
+      } catch (err) {
+        console.warn('Camera flip error:', err);
+      } finally {
+        btnFlipCamera.disabled = false;
+        btnFlipCamera.innerHTML = '<i class="fa-solid fa-camera-rotate"></i><span class="control-label">Voltear</span>';
+      }
+    });
+  }
+
   // ===== Copy Button Handlers =====
   document.addEventListener('click', (e) => {
     const copyBtn = e.target.closest('.card-copy-btn');
@@ -309,6 +374,43 @@ document.addEventListener('DOMContentLoaded', () => {
       btnCaptureText.textContent = 'Conectando...';
       updateStatus(true, 'CONECTANDO...');
 
+      // 1. Full session isolation: wipe previous transcripts and AI memory completely!
+      sttEngine.reset();
+      aiEngine.reset();
+
+      if (transcriptStream) {
+        transcriptStream.innerHTML = `
+          <div class="stream-item system-msg">
+            <span class="time">00:00</span>
+            <span class="text"><i class="fa-solid fa-circle-dot text-cyan"></i> Nueva reunión iniciada. Transcribiendo en tiempo real...</span>
+          </div>
+        `;
+      }
+      if (transcriptCount) transcriptCount.textContent = '0';
+      if (subtitlesText) subtitlesText.textContent = '';
+      if (subtitlesOverlay) subtitlesOverlay.classList.remove('visible');
+      if (customReplyCard) customReplyCard.style.display = 'none';
+      if (customReplyText) customReplyText.textContent = '';
+      if (speakerNameInput) speakerNameInput.value = 'Interlocutor';
+      if (btnSpeakerInterlocutor) {
+        btnSpeakerInterlocutor.innerHTML = '<i class="fa-solid fa-users text-purple"></i> Interlocutor';
+      }
+      if (agreementsContainer) {
+        agreementsContainer.innerHTML = '<p class="text-dim text-xs">Esperando acuerdos en la reunión...</p>';
+      }
+      if (actionItemsContainer) {
+        actionItemsContainer.innerHTML = '<p class="text-dim text-xs">Esperando tareas o compromisos...</p>';
+      }
+      if (labelUserRatio) labelUserRatio.innerHTML = '<i class="fa-solid fa-user text-cyan"></i> Tú: 50%';
+      if (labelInterlocutorRatio) labelInterlocutorRatio.innerHTML = '<i class="fa-solid fa-users text-purple"></i> Interlocutor: 50%';
+      if (ratioFillUser) ratioFillUser.style.width = '50%';
+      if (ratioFillInterlocutor) ratioFillInterlocutor.style.width = '50%';
+      if (kpiWpm) kpiWpm.textContent = '0 WPM';
+      if (kpiTechnicalDepth) kpiTechnicalDepth.textContent = 'General';
+      if (kpiBalance) kpiBalance.textContent = 'Inicio';
+      if (intensityText) intensityText.textContent = 'Distendida';
+      if (intensityPill) intensityPill.className = 'intensity-pill intensity-low';
+
       const result = await mediaEngine.startUnifiedCapture();
 
       // Switch view: hide Zen Lobby, show Active Workspace
@@ -347,9 +449,10 @@ document.addEventListener('DOMContentLoaded', () => {
       // Start timer
       startTimer();
 
-      // Enable mute buttons
+      // Enable media buttons
       btnMuteMic.disabled = false;
       btnMuteVideo.disabled = false;
+      if (btnFlipCamera) btnFlipCamera.disabled = false;
 
       // Update UI
       isActive = true;
@@ -418,9 +521,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (pStart) pStart.addEventListener('click', startCapture);
     }
 
-    // Reset mute states
+    // Reset mute & camera states
     btnMuteMic.disabled = true;
     btnMuteVideo.disabled = true;
+    if (btnFlipCamera) btnFlipCamera.disabled = true;
     btnMuteMic.classList.remove('muted');
     btnMuteVideo.classList.remove('muted');
     btnMuteMic.querySelector('i').className = 'fa-solid fa-microphone';
@@ -438,8 +542,9 @@ document.addEventListener('DOMContentLoaded', () => {
     btnCapture.querySelector('i').className = 'fa-solid fa-circle-dot';
     sourceLabel.textContent = 'Fuente: Sin Conectar';
 
-    // Save meeting to Database (IndexedDB + Server API)
+    // Save meeting to Database (IndexedDB + Server API) with clean state
     if (sttEngine.transcriptHistory.length > 0 || timerSeconds >= 5) {
+      const calculatedMetrics = aiEngine.detailedMetrics || aiEngine.calculateDetailedMetrics(sttEngine.transcriptHistory);
       const meetingData = {
         id: `meet_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
         timestamp: new Date().toISOString(),
@@ -448,14 +553,23 @@ document.addEventListener('DOMContentLoaded', () => {
         durationFormatted: timerText ? timerText.textContent : '00:00',
         topic: aiEngine.currentTopic || 'Coordinación General',
         sentiment: aiEngine.sentiment || 'Neutral',
+        intensity: aiEngine.meetingIntensity || 'Media / Productiva',
+        tone: aiEngine.meetingTone || 'Coordinación General',
         interventionsCount: sttEngine.transcriptHistory.length,
+        metrics: calculatedMetrics,
         transcript: [...sttEngine.transcriptHistory],
         agreements: [...aiEngine.agreements],
+        detailedAgreements: [...aiEngine.detailedAgreements],
         actionItems: [...aiEngine.actionItems],
+        detailedActionItems: [...aiEngine.detailedActionItems],
         hasVideo: !isVideoMuted
       };
       dbEngine.saveMeeting(meetingData).catch(e => console.warn('Could not save meeting:', e));
     }
+
+    // Clean memory after saving so subsequent meetings start completely clean
+    sttEngine.reset();
+    aiEngine.reset();
 
     subtitlesOverlay.classList.remove('visible');
     subtitlesText.textContent = '';
@@ -488,6 +602,169 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ===== EXECUTIVE PDF REPORT GENERATOR =====
+  const generateExecutivePDF = (meeting) => {
+    if (!meeting) return;
+
+    // Build formal printable executive document container
+    const container = document.createElement('div');
+    container.className = 'executive-pdf-container';
+    container.id = 'executivePdfExportDoc';
+
+    const speakersList = meeting.metrics && meeting.metrics.speakers
+      ? Object.keys(meeting.metrics.speakers).join(', ')
+      : (meeting.transcript && meeting.transcript.length > 0
+          ? [...new Set(meeting.transcript.map(t => t.speaker))].join(', ')
+          : 'Tú, Interlocutor');
+
+    const agreements = meeting.detailedAgreements && meeting.detailedAgreements.length > 0
+      ? meeting.detailedAgreements
+      : (meeting.agreements || []).map((a, i) => ({
+          id: `agr_${i}`,
+          title: typeof a === 'string' ? a : (a.title || a.text || 'Acuerdo'),
+          speaker: 'Participante',
+          timestamp: 'En sesión',
+          priority: 'Estratégica',
+          status: 'Compromiso en firme'
+        }));
+
+    const actionItems = meeting.detailedActionItems && meeting.detailedActionItems.length > 0
+      ? meeting.detailedActionItems
+      : (meeting.actionItems || []).map((t, i) => ({
+          id: `act_${i}`,
+          title: typeof t === 'string' ? t : (t.title || t.text || 'Tarea'),
+          speaker: 'Asignado',
+          timestamp: 'Pendiente',
+          priority: 'Media',
+          status: 'Por ejecutar'
+        }));
+
+    const m = meeting.metrics || {
+      userRatio: 50,
+      interlocutorRatio: 50,
+      wpm: 120,
+      technicalDepth: 'General / Estratégica',
+      conversationalBalance: 'Equilibrado'
+    };
+
+    container.innerHTML = `
+      <div class="pdf-header">
+        <div class="pdf-brand">
+          <h2>ReuLive <span style="color: #0284c7;">AI</span></h2>
+          <p>Acta & Informe Ejecutivo de Reunión</p>
+        </div>
+        <div class="pdf-meta-box">
+          <div><strong>ID Sesión:</strong> ${meeting.id || 'N/A'}</div>
+          <div><strong>Fecha:</strong> ${meeting.dateFormatted || new Date(meeting.timestamp || Date.now()).toLocaleDateString()}</div>
+          <div><strong>Duración:</strong> ${meeting.durationFormatted || '00:00'}</div>
+        </div>
+      </div>
+
+      <div class="pdf-title-banner">
+        <h3>${meeting.topic || 'Coordinación General'}</h3>
+        <p><strong>Participantes:</strong> ${speakersList} &nbsp;|&nbsp; <strong>Tono:</strong> ${meeting.tone || 'Coordinación'} &nbsp;|&nbsp; <strong>Intensidad:</strong> ${meeting.intensity || 'Productiva'}</p>
+      </div>
+
+      <div class="pdf-kpi-grid">
+        <div class="pdf-kpi-card">
+          <span>Balance de Voz</span>
+          <strong>Tú ${m.userRatio}% / Otros ${m.interlocutorRatio}%</strong>
+        </div>
+        <div class="pdf-kpi-card">
+          <span>Ritmo de Habla</span>
+          <strong>${m.wpm || 0} WPM</strong>
+        </div>
+        <div class="pdf-kpi-card">
+          <span>Nivel Técnico</span>
+          <strong>${m.technicalDepth || 'General'}</strong>
+        </div>
+        <div class="pdf-kpi-card">
+          <span>Intervenciones</span>
+          <strong>${meeting.interventionsCount || (meeting.transcript ? meeting.transcript.length : 0)} turnos</strong>
+        </div>
+      </div>
+
+      <div class="pdf-section-title">
+        <i class="fa-solid fa-handshake"></i> Acuerdos Formales & Compromisos (${agreements.length})
+      </div>
+      <div class="pdf-agreements-wrap">
+        ${agreements.length > 0 ? agreements.map((a, idx) => `
+          <div class="pdf-agreement-item">
+            <div class="pdf-item-title">#${idx + 1} ${a.title}</div>
+            <div class="pdf-item-meta">
+              <span><strong>Responsable:</strong> ${a.speaker || 'No especificado'}</span>
+              <span><strong>Momento:</strong> ${a.timestamp || 'En sesión'}</span>
+              <span><strong>Prioridad:</strong> ${a.priority || 'Estratégica'}</span>
+              <span><strong>Estado:</strong> ${a.status || 'Compromiso en firme'}</span>
+            </div>
+          </div>
+        `).join('') : '<p style="font-size: 8.5pt; color: #64748b; font-style: italic; margin: 4px 0;">Sin acuerdos formales registrados.</p>'}
+      </div>
+
+      <div class="pdf-section-title" style="margin-top: 18px;">
+        <i class="fa-solid fa-list-check"></i> Plan de Acción & Tareas (${actionItems.length})
+      </div>
+      <div class="pdf-actions-wrap">
+        ${actionItems.length > 0 ? actionItems.map((t, idx) => `
+          <div class="pdf-agreement-item task">
+            <div class="pdf-item-title">#${idx + 1} ${t.title}</div>
+            <div class="pdf-item-meta">
+              <span><strong>Asignado a:</strong> ${t.speaker || 'Pendiente'}</span>
+              <span><strong>Prioridad:</strong> ${t.priority || 'Media'}</span>
+              <span><strong>Estado:</strong> ${t.status || 'Pendiente'}</span>
+            </div>
+          </div>
+        `).join('') : '<p style="font-size: 8.5pt; color: #64748b; font-style: italic; margin: 4px 0;">Sin tareas pendientes registradas.</p>'}
+      </div>
+
+      <div class="pdf-section-title" style="margin-top: 18px;">
+        <i class="fa-solid fa-comments"></i> Transcripción Oficial de la Sesión
+      </div>
+      <div class="pdf-transcript-wrap">
+        ${(meeting.transcript || []).length > 0 ? (meeting.transcript || []).map(t => `
+          <div class="pdf-transcript-line">
+            <span class="time">[${t.timestamp || '00:00'}]</span>
+            <span class="speaker">${t.speaker}:</span>
+            <span class="text">${t.text}</span>
+          </div>
+        `).join('') : '<p style="font-size: 8.5pt; color: #64748b; font-style: italic; margin: 4px 0;">Sin intervenciones de audio registradas.</p>'}
+      </div>
+
+      <div class="pdf-footer">
+        <span>ReuLive AI Copilot — Documento oficial y confidencial de reunión</span>
+        <span>Generado el ${new Date().toLocaleString()}</span>
+      </div>
+    `;
+
+    document.body.appendChild(container);
+
+    if (window.html2pdf) {
+      const filename = `ReuLive-Acta-${meeting.id || Date.now()}.pdf`;
+      const opt = {
+        margin: [10, 10, 10, 10],
+        filename: filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, logging: false },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      window.html2pdf().set(opt).from(container).save().then(() => {
+        if (container.parentNode) document.body.removeChild(container);
+      }).catch(err => {
+        console.warn('html2pdf generation error, using window.print:', err);
+        window.print();
+        setTimeout(() => {
+          if (container.parentNode) document.body.removeChild(container);
+        }, 1000);
+      });
+    } else {
+      window.print();
+      setTimeout(() => {
+        if (container.parentNode) document.body.removeChild(container);
+      }, 1000);
+    }
+  };
+
   const renderUserHistory = async () => {
     if (!userHistoryList) return;
     userHistoryList.innerHTML = `
@@ -519,17 +796,18 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
 
         <div class="card-meta-row">
-          <span><i class="fa-solid fa-comments text-dim"></i> ${m.interventionsCount || (m.transcript ? m.transcript.length : 0)} intervenciones</span>
-          <span><i class="fa-solid fa-chart-line text-emerald"></i> ${m.sentiment || 'Neutral'}</span>
-          <span><i class="fa-solid fa-handshake text-lavender"></i> ${(m.agreements && m.agreements.length) || 0} acuerdos</span>
+          <span><i class="fa-solid fa-comments text-dim"></i> ${m.interventionsCount || (m.transcript ? m.transcript.length : 0)} turnos</span>
+          <span><i class="fa-solid fa-scale-balanced text-cyan"></i> ${m.metrics ? `Tú ${m.metrics.userRatio}% / Otros ${m.metrics.interlocutorRatio}%` : 'Intervenciones'}</span>
+          <span><i class="fa-solid fa-gauge-high text-sky"></i> ${m.intensity || 'Productiva'}</span>
+          <span><i class="fa-solid fa-handshake text-emerald"></i> ${(m.agreements && m.agreements.length) || 0} acuerdos</span>
         </div>
 
         <div class="card-actions-row">
           <button class="btn btn-outline btn-xs btn-history-details" data-id="${m.id}">
             <i class="fa-solid fa-align-left"></i> Transcripción
           </button>
-          <button class="btn btn-outline btn-xs btn-history-download" data-id="${m.id}">
-            <i class="fa-solid fa-download"></i> Descargar Informe
+          <button class="btn btn-primary btn-xs btn-history-download" data-id="${m.id}">
+            <i class="fa-solid fa-file-pdf"></i> Descargar PDF Ejecutivo
           </button>
           <button class="btn btn-outline btn-xs text-danger btn-history-delete" data-id="${m.id}" title="Eliminar">
             <i class="fa-solid fa-trash"></i>
@@ -567,25 +845,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const id = btn.getAttribute('data-id');
         const m = meetings.find(x => x.id === id);
         if (!m) return;
-        let md = `# Informe de Reunión ReuLive AI\n\n`;
-        md += `**Fecha:** ${m.dateFormatted || m.timestamp}\n`;
-        md += `**Tema Principal:** ${m.topic}\n`;
-        md += `**Duración:** ${m.durationFormatted}\n`;
-        md += `**Sentimiento:** ${m.sentiment}\n\n`;
-        md += `---\n\n## 🤝 Acuerdos\n`;
-        (m.agreements || []).forEach(a => md += `- ${a}\n`);
-        md += `\n## 📋 Tareas Pendientes\n`;
-        (m.actionItems || []).forEach(t => md += `- ${t}\n`);
-        md += `\n---\n\n## 💬 Transcripción Completa\n\n`;
-        (m.transcript || []).forEach(t => md += `* **[${t.timestamp || ''}] ${t.speaker}:** ${t.text}\n`);
-
-        const blob = new Blob([md], { type: 'text/markdown' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `ReuLive-Informe-${m.id}.md`;
-        a.click();
-        URL.revokeObjectURL(url);
+        generateExecutivePDF(m);
       });
     });
 
@@ -713,37 +973,34 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ===== EXPORT REPORT =====
+  // ===== EXPORT EXECUTIVE PDF REPORT =====
   btnExportReport.addEventListener('click', () => {
     const history = sttEngine.transcriptHistory;
-
-    let md = `# Informe de Reunión ReuLive AI\n\n`;
-    md += `**Fecha:** ${new Date().toLocaleString()}\n`;
-    md += `**Tema Principal:** ${aiEngine.currentTopic}\n`;
-    md += `**Duración:** ${timerText.textContent}\n`;
-    md += `**Intervenciones:** ${history.length}\n\n`;
-    md += `---\n\n## 📝 Transcripción Completa\n\n`;
-
-    history.forEach(item => {
-      const provTag = item.provider ? ` _(${item.provider})_` : '';
-      md += `* **[${item.timestamp}] ${item.speaker}:** ${item.text}${provTag}\n`;
-    });
-
-    md += `\n---\n\n## 🤝 Acuerdos\n`;
-    aiEngine.agreements.forEach(a => md += `- ${a}\n`);
-    if (aiEngine.agreements.length === 0) md += `- Sin acuerdos registrados\n`;
-
-    md += `\n## 📋 Tareas Pendientes\n`;
-    aiEngine.actionItems.forEach(t => md += `- ${t}\n`);
-    if (aiEngine.actionItems.length === 0) md += `- Sin tareas registradas\n`;
-
-    const blob = new Blob([md], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Informe-Reunion-${new Date().toISOString().slice(0, 10)}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const duration = timerText.textContent || '00:00';
+    const currentMeeting = {
+      id: `live_${Date.now()}`,
+      timestamp: Date.now(),
+      dateFormatted: new Date().toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' }),
+      durationFormatted: duration,
+      topic: aiEngine.currentTopic || 'Sesión en Vivo',
+      sentiment: aiEngine.sentiment || 'Neutral',
+      intensity: aiEngine.meetingIntensity || 'Media / Productiva',
+      tone: aiEngine.meetingTone || 'Coordinación General',
+      interventionsCount: history.length,
+      transcript: history,
+      agreements: aiEngine.agreements || [],
+      detailedAgreements: aiEngine.detailedAgreements || [],
+      actionItems: aiEngine.actionItems || [],
+      detailedActionItems: aiEngine.detailedActionItems || [],
+      metrics: aiEngine.calculateDetailedMetrics ? aiEngine.calculateDetailedMetrics(history) : {
+        userRatio: 50,
+        interlocutorRatio: 50,
+        wpm: 120,
+        technicalDepth: 'General / Estratégica',
+        conversationalBalance: 'Equilibrado'
+      }
+    };
+    generateExecutivePDF(currentMeeting);
   });
 
   // Clear transcript
@@ -814,19 +1071,127 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateMetaUI(aiMeta) {
-    if (currentTopicText) currentTopicText.textContent = aiMeta.topic;
-    if (analyticsCurrentTopic) analyticsCurrentTopic.textContent = aiMeta.topic;
-    if (sentimentText) sentimentText.textContent = aiMeta.sentiment;
+    if (!aiMeta) return;
 
-    if (aiMeta.agreements && aiMeta.agreements.length > 0 && agreementsList) {
-      agreementsList.innerHTML = aiMeta.agreements.map(a =>
-        `<li><i class="fa-solid fa-check text-emerald"></i> ${a}</li>`
-      ).join('');
+    if (currentTopicText) currentTopicText.textContent = aiMeta.topic || 'En espera...';
+    if (analyticsCurrentTopic) analyticsCurrentTopic.textContent = aiMeta.topic || 'Coordinación General';
+    if (sentimentText) sentimentText.textContent = aiMeta.sentiment || 'Neutral';
+
+    // 1. Intensity & Tone Pill
+    if (intensityPill && intensityText) {
+      const rawIntensity = aiMeta.intensity || 'Media / Productiva';
+      let pillClass = 'intensity-pill intensity-medium';
+      let shortLabel = 'Productiva';
+      let iconClass = 'fa-solid fa-gauge-high text-sky';
+
+      if (rawIntensity.includes('Crítica') || rawIntensity.includes('Urgente')) {
+        pillClass = 'intensity-pill intensity-critical';
+        shortLabel = 'Urgente';
+        iconClass = 'fa-solid fa-triangle-exclamation text-danger';
+      } else if (rawIntensity.includes('Alta') || rawIntensity.includes('Negociación')) {
+        pillClass = 'intensity-pill intensity-high';
+        shortLabel = 'Negociación';
+        iconClass = 'fa-solid fa-fire text-amber';
+      } else if (rawIntensity.includes('Baja') || rawIntensity.includes('Distendida')) {
+        pillClass = 'intensity-pill intensity-low';
+        shortLabel = 'Distendida';
+        iconClass = 'fa-solid fa-leaf text-emerald';
+      }
+
+      intensityPill.className = pillClass;
+      intensityText.textContent = `${shortLabel} (${aiMeta.tone || 'Coordinación'})`;
+      if (intensityIcon) intensityIcon.className = iconClass;
+      intensityPill.title = `Intensidad: ${rawIntensity} | Tono: ${aiMeta.tone || 'General'}`;
     }
-    if (aiMeta.actionItems && aiMeta.actionItems.length > 0 && actionItemsList) {
-      actionItemsList.innerHTML = aiMeta.actionItems.map(t =>
-        `<li><i class="fa-regular fa-square text-amber"></i> ${t}</li>`
-      ).join('');
+
+    // 2. Speaker Ratios & Technical Metrics
+    if (aiMeta.metrics) {
+      const m = aiMeta.metrics;
+      if (labelUserRatio) {
+        labelUserRatio.innerHTML = `<i class="fa-solid fa-user text-cyan"></i> Tú: ${m.userRatio}% (${m.userWords || 0} pal)`;
+      }
+      if (labelInterlocutorRatio) {
+        const otherName = (sttEngine.speakers && sttEngine.speakers.interlocutor !== 'Interlocutor')
+          ? sttEngine.speakers.interlocutor
+          : 'Otros';
+        labelInterlocutorRatio.innerHTML = `<i class="fa-solid fa-users text-purple"></i> ${otherName}: ${m.interlocutorRatio}% (${m.interlocutorWords || 0} pal)`;
+      }
+      if (ratioFillUser) ratioFillUser.style.width = `${m.userRatio}%`;
+      if (ratioFillInterlocutor) ratioFillInterlocutor.style.width = `${m.interlocutorRatio}%`;
+      if (kpiWpm) kpiWpm.textContent = `${m.wpm || 0} WPM`;
+      if (kpiTechnicalDepth) kpiTechnicalDepth.textContent = m.technicalDepth || 'General';
+      if (kpiBalance) kpiBalance.textContent = m.conversationalBalance || 'Fluido';
+    }
+
+    // 3. Deep Expandable Accordions for Agreements
+    if (agreementsContainer) {
+      const dAgreements = aiMeta.detailedAgreements || [];
+      if (dAgreements.length > 0) {
+        agreementsContainer.innerHTML = dAgreements.map((a, idx) => {
+          let badgeClass = 'priority-strategic';
+          if (a.priority && a.priority.includes('Alta')) badgeClass = 'priority-high';
+          else if (a.priority && a.priority.includes('Media')) badgeClass = 'priority-medium';
+
+          return `
+            <details class="deep-item-card" ${idx === dAgreements.length - 1 ? 'open' : ''}>
+              <summary class="deep-item-summary">
+                <span class="deep-summary-title">
+                  <i class="fa-solid fa-handshake text-emerald"></i>
+                  <span>${a.title}</span>
+                </span>
+                <span class="deep-badge-priority ${badgeClass}">${a.priority || 'Estratégica'}</span>
+              </summary>
+              <div class="deep-item-body">
+                <div class="deep-meta-row">
+                  <span><i class="fa-solid fa-user-check"></i> <strong>Pactado por:</strong> ${a.speaker || 'Participante'}</span>
+                  <span><i class="fa-regular fa-clock"></i> ${a.timestamp || 'En sesión'}</span>
+                </div>
+                <div class="deep-meta-row">
+                  <span><i class="fa-solid fa-shield-halved"></i> <strong>Estado:</strong> ${a.status || 'Compromiso en firme'}</span>
+                </div>
+                <div class="deep-context-box">"${a.context || a.title}"</div>
+              </div>
+            </details>
+          `;
+        }).join('');
+      } else {
+        agreementsContainer.innerHTML = `<p class="text-dim text-xs" style="padding: 6px 0;"><i class="fa-solid fa-info-circle"></i> Esperando acuerdos en la reunión...</p>`;
+      }
+    }
+
+    // 4. Deep Expandable Accordions for Action Items
+    if (actionItemsContainer) {
+      const dActions = aiMeta.detailedActionItems || [];
+      if (dActions.length > 0) {
+        actionItemsContainer.innerHTML = dActions.map((t, idx) => {
+          let badgeClass = 'priority-medium';
+          if (t.priority && (t.priority.includes('Alta') || t.priority.includes('Crítica'))) badgeClass = 'priority-high';
+
+          return `
+            <details class="deep-item-card" ${idx === dActions.length - 1 ? 'open' : ''}>
+              <summary class="deep-item-summary">
+                <span class="deep-summary-title">
+                  <i class="fa-solid fa-list-check text-amber"></i>
+                  <span>${t.title}</span>
+                </span>
+                <span class="deep-badge-priority ${badgeClass}">${t.priority || 'Media'}</span>
+              </summary>
+              <div class="deep-item-body">
+                <div class="deep-meta-row">
+                  <span><i class="fa-solid fa-user-gear"></i> <strong>Asignado:</strong> ${t.speaker || 'Pendiente'}</span>
+                  <span><i class="fa-regular fa-clock"></i> ${t.timestamp || '00:00'}</span>
+                </div>
+                <div class="deep-meta-row">
+                  <span><i class="fa-solid fa-spinner"></i> <strong>Estado:</strong> ${t.status || 'Pendiente'}</span>
+                </div>
+                <div class="deep-context-box">"${t.context || t.title}"</div>
+              </div>
+            </details>
+          `;
+        }).join('');
+      } else {
+        actionItemsContainer.innerHTML = `<p class="text-dim text-xs" style="padding: 6px 0;"><i class="fa-solid fa-info-circle"></i> Esperando tareas o compromisos...</p>`;
+      }
     }
   }
 });
