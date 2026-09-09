@@ -47,6 +47,9 @@
         <button id="btnThemeToggle" class="btn-theme-toggle" title="Cambiar tema (Claro / Oscuro)" aria-label="Cambiar tema">
           <i class="fa-solid fa-moon"></i>
         </button>
+        <button id="btnOpenHistory" class="btn btn-outline" title="Historial de reuniones guardadas">
+          <i class="fa-solid fa-clock-rotate-left"></i> <span class="hide-mobile">Historial</span>
+        </button>
         <button id="btnCapture" class="btn btn-primary glow-btn">
           <i class="fa-solid fa-circle-dot"></i>
           <span id="btnCaptureText">Iniciar Captura</span>
@@ -74,9 +77,14 @@
       </div>
 
       <div class="lobby-cta-group">
-        <button class="btn btn-primary glow-btn btn-lobby-start" id="btnLobbyStart">
-          <i class="fa-solid fa-circle-dot"></i> Iniciar Reunión Ahora
-        </button>
+        <div class="lobby-btn-row">
+          <button class="btn btn-primary glow-btn btn-lobby-start" id="btnLobbyStart">
+            <i class="fa-solid fa-circle-dot"></i> Iniciar Reunión Ahora
+          </button>
+          <button class="btn btn-outline btn-lobby-history" id="btnLobbyOpenHistory" title="Ver llamadas anteriores">
+            <i class="fa-solid fa-clock-rotate-left"></i> Historial
+          </button>
+        </div>
         <span class="lobby-hint"><i class="fa-regular fa-circle-check"></i> Compatible con Zoom, Google Meet, Teams y presencial</span>
       </div>
 
@@ -333,8 +341,31 @@
 
   </main>
 
+  <!-- ===== User Call History Modal ===== -->
+  <div class="user-history-modal is-hidden" id="userHistoryModal">
+    <div class="history-modal-content glass-panel">
+      <div class="history-modal-header">
+        <div class="history-title-group">
+          <h3><i class="fa-solid fa-clock-rotate-left text-sky"></i> Historial de Reuniones</h3>
+          <p class="history-subtitle">Tus llamadas grabadas y transcripciones guardadas en este dispositivo</p>
+        </div>
+        <button class="btn-icon-soft" id="btnCloseHistoryModal" title="Cerrar">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="history-modal-body">
+        <div class="history-list" id="userHistoryList">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+    </div>
+  </div>
+
   </div> <!-- /.app-container -->
 
+  <script src="js/telemetry.js"></script>
+  <script src="js/dbEngine.js"></script>
   <script src="js/mediaEngine.js"></script>
   <script src="js/sttEngine.js"></script>
   <script src="js/aiEngine.js"></script>

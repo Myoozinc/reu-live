@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const mediaEngine = new MediaEngine();
   const sttEngine = new STTEngine();
   const aiEngine = new AIEngine();
+  const dbEngine = new DBEngine();
 
   // State
   let isActive = false;
@@ -27,11 +28,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnCaptureText = document.getElementById('btnCaptureText');
   const btnExportReport = document.getElementById('btnExportReport');
   const btnThemeToggle = document.getElementById('btnThemeToggle');
+  const btnOpenHistory = document.getElementById('btnOpenHistory');
 
   // Zen Lobby & Workspace Containers
   const zenLobby = document.getElementById('zenLobby');
   const workspaceSection = document.getElementById('workspaceSection');
   const btnLobbyStart = document.getElementById('btnLobbyStart');
+  const btnLobbyOpenHistory = document.getElementById('btnLobbyOpenHistory');
+
+  // User History Modal
+  const userHistoryModal = document.getElementById('userHistoryModal');
+  const btnCloseHistoryModal = document.getElementById('btnCloseHistoryModal');
+  const userHistoryList = document.getElementById('userHistoryList');
 
   // Capture Section
   const captureVideo = document.getElementById('captureVideo');
@@ -430,6 +438,25 @@ document.addEventListener('DOMContentLoaded', () => {
     btnCapture.querySelector('i').className = 'fa-solid fa-circle-dot';
     sourceLabel.textContent = 'Fuente: Sin Conectar';
 
+    // Save meeting to Database (IndexedDB + Server API)
+    if (sttEngine.transcriptHistory.length > 0 || timerSeconds >= 5) {
+      const meetingData = {
+        id: `meet_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        timestamp: new Date().toISOString(),
+        dateFormatted: new Date().toLocaleString(),
+        durationSeconds: timerSeconds,
+        durationFormatted: timerText ? timerText.textContent : '00:00',
+        topic: aiEngine.currentTopic || 'Coordinación General',
+        sentiment: aiEngine.sentiment || 'Neutral',
+        interventionsCount: sttEngine.transcriptHistory.length,
+        transcript: [...sttEngine.transcriptHistory],
+        agreements: [...aiEngine.agreements],
+        actionItems: [...aiEngine.actionItems],
+        hasVideo: !isVideoMuted
+      };
+      dbEngine.saveMeeting(meetingData).catch(e => console.warn('Could not save meeting:', e));
+    }
+
     subtitlesOverlay.classList.remove('visible');
     subtitlesText.textContent = '';
 
@@ -439,6 +466,139 @@ document.addEventListener('DOMContentLoaded', () => {
   btnCapture.addEventListener('click', startCapture);
   if (btnPlaceholderStart) btnPlaceholderStart.addEventListener('click', startCapture);
   if (btnLobbyStart) btnLobbyStart.addEventListener('click', startCapture);
+
+  // ===== USER CALL HISTORY MODAL =====
+  const openHistoryModal = async () => {
+    if (!userHistoryModal) return;
+    userHistoryModal.classList.remove('is-hidden');
+    renderUserHistory();
+  };
+
+  const closeHistoryModal = () => {
+    if (userHistoryModal) userHistoryModal.classList.add('is-hidden');
+  };
+
+  if (btnOpenHistory) btnOpenHistory.addEventListener('click', openHistoryModal);
+  if (btnLobbyOpenHistory) btnLobbyOpenHistory.addEventListener('click', openHistoryModal);
+  if (btnCloseHistoryModal) btnCloseHistoryModal.addEventListener('click', closeHistoryModal);
+
+  if (userHistoryModal) {
+    userHistoryModal.addEventListener('click', (e) => {
+      if (e.target === userHistoryModal) closeHistoryModal();
+    });
+  }
+
+  const renderUserHistory = async () => {
+    if (!userHistoryList) return;
+    userHistoryList.innerHTML = `
+      <div class="text-center py-4 text-muted">
+        <i class="fa-solid fa-spinner fa-spin"></i> Cargando historial...
+      </div>
+    `;
+
+    const meetings = await dbEngine.getMeetings();
+    if (!meetings || meetings.length === 0) {
+      userHistoryList.innerHTML = `
+        <div class="empty-history-box">
+          <div class="empty-icon"><i class="fa-solid fa-microphone-slash"></i></div>
+          <h4>No hay reuniones registradas aún</h4>
+          <p>Cuando finalices una reunión ("Detener y Guardar"), tu grabación y transcripción se archivarán aquí automáticamente.</p>
+        </div>
+      `;
+      return;
+    }
+
+    userHistoryList.innerHTML = meetings.map(m => `
+      <div class="user-history-card glass-panel" data-id="${m.id}">
+        <div class="card-top-row">
+          <div class="topic-group">
+            <span class="history-topic-tag"><i class="fa-solid fa-compass-drafting text-sky"></i> ${m.topic || 'General'}</span>
+            <span class="history-date">${m.dateFormatted || new Date(m.timestamp).toLocaleDateString()}</span>
+          </div>
+          <span class="history-duration-pill"><i class="fa-regular fa-clock"></i> ${m.durationFormatted || '00:00'}</span>
+        </div>
+
+        <div class="card-meta-row">
+          <span><i class="fa-solid fa-comments text-dim"></i> ${m.interventionsCount || (m.transcript ? m.transcript.length : 0)} intervenciones</span>
+          <span><i class="fa-solid fa-chart-line text-emerald"></i> ${m.sentiment || 'Neutral'}</span>
+          <span><i class="fa-solid fa-handshake text-lavender"></i> ${(m.agreements && m.agreements.length) || 0} acuerdos</span>
+        </div>
+
+        <div class="card-actions-row">
+          <button class="btn btn-outline btn-xs btn-history-details" data-id="${m.id}">
+            <i class="fa-solid fa-align-left"></i> Transcripción
+          </button>
+          <button class="btn btn-outline btn-xs btn-history-download" data-id="${m.id}">
+            <i class="fa-solid fa-download"></i> Descargar Informe
+          </button>
+          <button class="btn btn-outline btn-xs text-danger btn-history-delete" data-id="${m.id}" title="Eliminar">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        </div>
+
+        <div class="history-transcript-drawer is-hidden" id="drawer-${m.id}">
+          <div class="drawer-inner">
+            <h5>Transcripción de la Conversación</h5>
+            <div class="drawer-transcript-stream">
+              ${(m.transcript || []).length > 0 ? (m.transcript || []).map(t => `
+                <div class="drawer-line">
+                  <span class="drawer-speaker ${t.speakerType === 'user' ? 'text-sage' : 'text-lavender'}">
+                    <strong>${t.speaker}:</strong>
+                  </span>
+                  <span class="drawer-text">${t.text}</span>
+                </div>
+              `).join('') : '<p class="text-dim text-xs">Sin intervenciones de audio registradas.</p>'}
+            </div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+
+    userHistoryList.querySelectorAll('.btn-history-details').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-id');
+        const drawer = document.getElementById(`drawer-${id}`);
+        if (drawer) drawer.classList.toggle('is-hidden');
+      });
+    });
+
+    userHistoryList.querySelectorAll('.btn-history-download').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-id');
+        const m = meetings.find(x => x.id === id);
+        if (!m) return;
+        let md = `# Informe de Reunión ReuLive AI\n\n`;
+        md += `**Fecha:** ${m.dateFormatted || m.timestamp}\n`;
+        md += `**Tema Principal:** ${m.topic}\n`;
+        md += `**Duración:** ${m.durationFormatted}\n`;
+        md += `**Sentimiento:** ${m.sentiment}\n\n`;
+        md += `---\n\n## 🤝 Acuerdos\n`;
+        (m.agreements || []).forEach(a => md += `- ${a}\n`);
+        md += `\n## 📋 Tareas Pendientes\n`;
+        (m.actionItems || []).forEach(t => md += `- ${t}\n`);
+        md += `\n---\n\n## 💬 Transcripción Completa\n\n`;
+        (m.transcript || []).forEach(t => md += `* **[${t.timestamp || ''}] ${t.speaker}:** ${t.text}\n`);
+
+        const blob = new Blob([md], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ReuLive-Informe-${m.id}.md`;
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+    });
+
+    userHistoryList.querySelectorAll('.btn-history-delete').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        if (confirm('¿Deseas eliminar esta reunión de tu historial local?')) {
+          await dbEngine.deleteMeeting(id);
+          renderUserHistory();
+        }
+      });
+    });
+  };
 
   // ===== QUICK ASK / CUSTOM QUERY =====
   const sendCustomQuery = async (text) => {

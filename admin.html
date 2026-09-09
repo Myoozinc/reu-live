@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ReuLive Admin | Panel de Control & Telemetría</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="admin-body zen-theme">
+
+  <!-- ==========================================
+       1. ADMIN LOGIN VIEW
+       ========================================== -->
+  <div class="admin-login-wrapper" id="adminLoginSection">
+    <div class="admin-login-card glass-panel">
+      <div class="login-header">
+        <div class="login-icon">
+          <i class="fa-solid fa-shield-halved"></i>
+        </div>
+        <h2>ReuLive Admin</h2>
+        <p class="login-subtitle">Acceso exclusivo para administradores</p>
+      </div>
+
+      <div id="loginErrorMsg" class="login-error-banner is-hidden">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span id="loginErrorText">Credenciales incorrectas</span>
+      </div>
+
+      <form id="adminLoginForm" class="admin-login-form">
+        <div class="form-group">
+          <label for="adminUsername"><i class="fa-regular fa-user"></i> Usuario</label>
+          <input type="text" id="adminUsername" placeholder="admin.one" required autocomplete="username" spellcheck="false">
+        </div>
+
+        <div class="form-group">
+          <label for="adminPassword"><i class="fa-solid fa-lock"></i> Contraseña</label>
+          <input type="password" id="adminPassword" placeholder="••••••••" required autocomplete="current-password">
+        </div>
+
+        <button type="submit" class="btn btn-primary glow-btn btn-block" id="btnLoginSubmit">
+          <i class="fa-solid fa-right-to-bracket"></i> Iniciar Sesión
+        </button>
+      </form>
+
+      <div class="login-footer">
+        <a href="/" class="link-back-app"><i class="fa-solid fa-arrow-left"></i> Volver a ReuLive App</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       2. ADMIN DASHBOARD VIEW
+       ========================================== -->
+  <div class="admin-dashboard is-hidden" id="adminDashboardSection">
+
+    <!-- Admin Header Bar -->
+    <header class="admin-header">
+      <div class="admin-brand">
+        <div class="logo-icon">
+          <i class="fa-solid fa-waveform-lines"></i>
+        </div>
+        <div class="brand-text">
+          <h2>ReuLive <span class="badge-admin">Admin HUD</span></h2>
+          <p class="brand-sub" id="dbStatusBadge"><i class="fa-solid fa-circle text-emerald"></i> Base de Datos Conectada</p>
+        </div>
+      </div>
+
+      <div class="admin-header-actions">
+        <button id="btnAdminThemeToggle" class="btn-theme-toggle" title="Cambiar tema">
+          <i class="fa-solid fa-moon"></i>
+        </button>
+
+        <button id="btnExportDb" class="btn btn-outline btn-sm" title="Descargar respaldo de base de datos">
+          <i class="fa-solid fa-download"></i> <span class="hide-mobile">Respaldo DB</span>
+        </button>
+
+        <a href="/" target="_blank" class="btn btn-outline btn-sm" title="Abrir la aplicación">
+          <i class="fa-solid fa-arrow-up-right-from-square"></i> <span class="hide-mobile">Ver App</span>
+        </a>
+
+        <button id="btnLogout" class="btn btn-outline btn-sm text-danger" title="Cerrar sesión">
+          <i class="fa-solid fa-arrow-right-from-bracket"></i> <span class="hide-mobile">Salir</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="admin-main">
+
+      <!-- KPI Summary Cards -->
+      <section class="kpi-grid">
+        <div class="kpi-card glass-panel">
+          <div class="kpi-icon icon-sky"><i class="fa-solid fa-users"></i></div>
+          <div class="kpi-info">
+            <span class="kpi-label">Visitas Totales</span>
+            <h3 class="kpi-value" id="kpiTotalVisits">0</h3>
+            <span class="kpi-sub" id="kpiActiveNow">0 activas ahora</span>
+          </div>
+        </div>
+
+        <div class="kpi-card glass-panel">
+          <div class="kpi-icon icon-sage"><i class="fa-solid fa-video"></i></div>
+          <div class="kpi-info">
+            <span class="kpi-label">Llamadas Grabadas</span>
+            <h3 class="kpi-value" id="kpiTotalMeetings">0</h3>
+            <span class="kpi-sub">Con transcripción íntegra</span>
+          </div>
+        </div>
+
+        <div class="kpi-card glass-panel">
+          <div class="kpi-icon icon-lavender"><i class="fa-solid fa-clock"></i></div>
+          <div class="kpi-info">
+            <span class="kpi-label">Tiempo Promedio en App</span>
+            <h3 class="kpi-value" id="kpiAvgDuration">0s</h3>
+            <span class="kpi-sub">Por sesión de usuario</span>
+          </div>
+        </div>
+
+        <div class="kpi-card glass-panel">
+          <div class="kpi-icon icon-terracotta"><i class="fa-solid fa-earth-americas"></i></div>
+          <div class="kpi-info">
+            <span class="kpi-label">Países Alcanzados</span>
+            <h3 class="kpi-value" id="kpiTotalCountries">0</h3>
+            <span class="kpi-sub">Usuarios globales</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Navigation Tabs -->
+      <div class="admin-nav-tabs">
+        <button class="nav-tab-btn active" data-tab="tabTelemetry">
+          <i class="fa-solid fa-satellite-dish"></i> Tráfico & Visitantes
+        </button>
+        <button class="nav-tab-btn" data-tab="tabMeetings">
+          <i class="fa-solid fa-file-lines"></i> Historial de Grabaciones
+        </button>
+        <button class="nav-tab-btn" data-tab="tabMetrics">
+          <i class="fa-solid fa-chart-pie"></i> Métricas & Países
+        </button>
+      </div>
+
+      <!-- ==========================================
+           TAB 1: TELEMETRÍA DE VISITANTES
+           ========================================== -->
+      <div class="tab-pane active" id="tabTelemetry">
+        <div class="table-container glass-panel">
+          <div class="table-header-tools">
+            <div class="search-box">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="telemetrySearch" placeholder="Buscar por país, ciudad o URL...">
+            </div>
+            <button id="btnRefreshTelemetry" class="btn btn-outline btn-sm">
+              <i class="fa-solid fa-arrows-rotate"></i> Actualizar
+            </button>
+          </div>
+
+          <div class="table-responsive">
+            <table class="admin-table" id="telemetryTable">
+              <thead>
+                <tr>
+                  <th>Estado</th>
+                  <th>Fecha & Hora</th>
+                  <th>País / Ubicación</th>
+                  <th>URL de Entrada</th>
+                  <th>Dispositivo / Navegador</th>
+                  <th>Tiempo en App</th>
+                </tr>
+              </thead>
+              <tbody id="telemetryTableBody">
+                <tr>
+                  <td colspan="6" class="text-center py-4 text-muted">
+                    <i class="fa-solid fa-spinner fa-spin"></i> Cargando visitas...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==========================================
+           TAB 2: HISTORIAL DE LLAMADAS & TRANSCRIPCIONES
+           ========================================== -->
+      <div class="tab-pane" id="tabMeetings">
+        <div class="table-container glass-panel">
+          <div class="table-header-tools">
+            <div class="search-box">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="meetingsSearch" placeholder="Buscar por tema o acuerdos...">
+            </div>
+            <button id="btnRefreshMeetings" class="btn btn-outline btn-sm">
+              <i class="fa-solid fa-arrows-rotate"></i> Actualizar
+            </button>
+          </div>
+
+          <div class="table-responsive">
+            <table class="admin-table" id="meetingsTable">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Duración</th>
+                  <th>Tema Principal</th>
+                  <th>Intervenciones</th>
+                  <th>Sentimiento</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="meetingsTableBody">
+                <tr>
+                  <td colspan="6" class="text-center py-4 text-muted">
+                    <i class="fa-solid fa-spinner fa-spin"></i> Cargando conversaciones...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==========================================
+           TAB 3: MÉTRICAS & DISTRIBUCIÓN
+           ========================================== -->
+      <div class="tab-pane" id="tabMetrics">
+        <div class="metrics-grid">
+          <div class="metric-card glass-panel">
+            <h3><i class="fa-solid fa-globe text-sky"></i> Distribución por País</h3>
+            <div id="countriesDistributionList" class="country-meters-list">
+              <p class="text-muted">Cargando datos geográficos...</p>
+            </div>
+          </div>
+
+          <div class="metric-card glass-panel">
+            <h3><i class="fa-solid fa-tags text-lavender"></i> Temas Más Frecuentes</h3>
+            <div id="topicsDistributionList" class="topic-tags-list">
+              <p class="text-muted">Cargando temas analizados...</p>
+            </div>
+          </div>
+
+          <div class="metric-card glass-panel">
+            <h3><i class="fa-solid fa-database text-sage"></i> Estado de Persistencia</h3>
+            <div class="db-info-box">
+              <div class="info-row">
+                <span>Motor Activo:</span>
+                <strong id="dbEngineType">Detectando...</strong>
+              </div>
+              <div class="info-row">
+                <span>Respaldo Automático:</span>
+                <span class="status-pill status-pill-success">Activo</span>
+              </div>
+              <p class="db-note">
+                Todos los datos se guardan tanto en servidor como en el cliente de cada usuario para máxima redundancia y respaldo.
+              </p>
+              <button id="btnDownloadBackupJson" class="btn btn-primary glow-btn btn-sm mt-3">
+                <i class="fa-solid fa-cloud-arrow-down"></i> Descargar Respaldo Completo (JSON)
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- ==========================================
+       3. TRANSCRIPT VIEWER MODAL
+       ========================================== -->
+  <div class="admin-modal-overlay is-hidden" id="transcriptModal">
+    <div class="admin-modal glass-panel">
+      <div class="admin-modal-header">
+        <div class="modal-title-group">
+          <h3 id="modalMeetingTopic">Tema de la Reunión</h3>
+          <p class="modal-sub" id="modalMeetingMeta">Fecha • Duración</p>
+        </div>
+        <button class="btn-icon-soft" id="btnCloseTranscriptModal">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="admin-modal-body">
+        <!-- Agreements & Tasks summary -->
+        <div class="modal-summary-box">
+          <div class="summary-col">
+            <h4><i class="fa-solid fa-handshake text-emerald"></i> Acuerdos Registrados</h4>
+            <ul id="modalAgreementsList" class="bullet-list-sm">
+              <li>Sin acuerdos registrados</li>
+            </ul>
+          </div>
+          <div class="summary-col">
+            <h4><i class="fa-solid fa-list-check text-amber"></i> Tareas Pendientes</h4>
+            <ul id="modalActionItemsList" class="bullet-list-sm">
+              <li>Sin tareas pendientes</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Full Transcript Conversation Stream -->
+        <h4 class="mt-3"><i class="fa-solid fa-comments text-sky"></i> Transcripción Completa de la Conversación</h4>
+        <div class="modal-transcript-stream" id="modalTranscriptStream">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <div class="admin-modal-footer">
+        <button id="btnCopyTranscript" class="btn btn-outline btn-sm">
+          <i class="fa-regular fa-copy"></i> Copiar Texto
+        </button>
+        <button id="btnDownloadMarkdown" class="btn btn-primary btn-sm">
+          <i class="fa-solid fa-file-arrow-down"></i> Descargar Markdown
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/admin.js"></script>
+</body>
+</html>
