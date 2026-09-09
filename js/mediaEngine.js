@@ -248,13 +248,13 @@ class MediaEngine {
 
         const gradient = this.canvasCtx.createLinearGradient(0, height, 0, y);
         if (isDark) {
-          gradient.addColorStop(0, 'rgba(120, 181, 143, 0.12)'); // Sage
-          gradient.addColorStop(0.5, 'rgba(107, 176, 224, 0.55)'); // Misty sky
-          gradient.addColorStop(1, 'rgba(158, 146, 212, 0.85)'); // Lavender
+          gradient.addColorStop(0, 'rgba(59, 130, 246, 0.15)'); // Soft royal blue base
+          gradient.addColorStop(0.5, 'rgba(56, 189, 248, 0.65)'); // Electric cyan
+          gradient.addColorStop(1, 'rgba(147, 197, 253, 0.95)'); // Bright highlight
         } else {
-          gradient.addColorStop(0, 'rgba(78, 128, 97, 0.08)');  // Soft sage
-          gradient.addColorStop(0.5, 'rgba(59, 119, 166, 0.4)'); // Sky
-          gradient.addColorStop(1, 'rgba(114, 101, 168, 0.7)'); // Lavender
+          gradient.addColorStop(0, 'rgba(29, 104, 240, 0.12)');  // Soft royal blue base
+          gradient.addColorStop(0.5, 'rgba(37, 99, 235, 0.55)'); // Vibrant royal blue
+          gradient.addColorStop(1, 'rgba(96, 165, 250, 0.85)'); // Electric blue
         }
 
         this.canvasCtx.fillStyle = gradient;

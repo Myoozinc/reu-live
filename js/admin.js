@@ -540,9 +540,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     container.innerHTML = `
       <div class="pdf-header">
-        <div class="pdf-brand">
-          <h2>ReuLive <span style="color: #0284c7;">AI</span></h2>
-          <p>Acta & Informe Ejecutivo de Reunión (Copia Administrativa)</p>
+        <div class="pdf-brand" style="display: flex; align-items: center; gap: 12px;">
+          <img src="assets/logo.jpg" style="width: 44px; height: 44px; border-radius: 10px; object-fit: cover; box-shadow: 0 2px 8px rgba(29, 104, 240, 0.25);" alt="Reu.live">
+          <div>
+            <h2 style="margin: 0; font-size: 20pt; font-weight: 800; color: #0f172a; letter-spacing: -0.5px;">Reu<span style="color: #1d68f0;">.live</span> AI</h2>
+            <p style="margin: 2px 0 0 0; font-size: 8.5pt; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">Acta & Informe Ejecutivo de Reunión (Copia Administrativa)</p>
+          </div>
         </div>
         <div class="pdf-meta-box">
           <div><strong>ID Sesión:</strong> ${meeting.id || 'N/A'}</div>
@@ -551,7 +554,7 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       </div>
 
-      <div class="pdf-title-banner">
+      <div class="pdf-title-banner" style="border-left: 5px solid #1d68f0;">
         <h3>${meeting.topic || 'Coordinación General'}</h3>
         <p><strong>Participantes:</strong> ${speakersList} &nbsp;|&nbsp; <strong>Tono:</strong> ${meeting.tone || 'Coordinación'} &nbsp;|&nbsp; <strong>Intensidad:</strong> ${meeting.intensity || 'Productiva'}</p>
       </div>
@@ -622,7 +625,7 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
 
       <div class="pdf-footer">
-        <span>ReuLive AI Copilot — Documento oficial y confidencial de reunión</span>
+        <span>Reu.live AI Copilot — Documento oficial y confidencial de reunión</span>
         <span>Generado el ${new Date().toLocaleString()}</span>
       </div>
     `;
@@ -630,7 +633,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.appendChild(container);
 
     if (window.html2pdf) {
-      const filename = `ReuLive-Acta-Admin-${meeting.id || Date.now()}.pdf`;
+      const filename = `Reu.live-Acta-Admin-${meeting.id || Date.now()}.pdf`;
       const opt = {
         margin: [10, 10, 10, 10],
         filename: filename,
