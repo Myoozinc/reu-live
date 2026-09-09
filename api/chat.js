@@ -45,65 +45,76 @@ export default async function handler(req, res) {
 
   // ---- Intento 1: Groq ----
   if (groqKey) {
-    try {
-      const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${groqKey}`
-        },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          max_tokens: 700,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ]
-        })
-      });
+    const groqModels = ['qwen/qwen3.6-27b', 'groq/compound', 'llama-3.3-70b-versatile'];
+    for (const model of groqModels) {
+      try {
+        const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${groqKey}`
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: 700,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt }
+            ]
+          })
+        });
 
-      if (r.ok) {
-        const data = await r.json();
-        const reply = data.choices?.[0]?.message?.content;
-        if (reply) {
-          res.status(200).json({ reply, provider: 'groq' });
-          return;
+        if (r.ok) {
+          const data = await r.json();
+          let reply = data.choices?.[0]?.message?.content;
+          if (reply) {
+            // Clean up reasoning <think> tags if present
+            reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+            res.status(200).json({ reply, provider: `groq (${model})` });
+            return;
+          }
         }
-      } else {
-        console.error('Groq error:', r.status, await r.text());
+      } catch (err) {
+        console.error(`Groq request failed for model ${model}:`, err);
       }
-    } catch (err) {
-      console.error('Groq request failed:', err);
     }
   }
 
   // ---- Intento 2: OpenRouter (respaldo) ----
   if (openrouterKey) {
-    try {
-      const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${openrouterKey}`
-        },
-        body: JSON.stringify({
-          model: 'meta-llama/llama-3.3-70b-instruct:free',
-          max_tokens: 700,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ]
-        })
-      });
+    const openrouterModels = ['meta-llama/llama-3.3-70b-instruct:free', 'liquid/lfm-2.5-2.6b:free', 'nvidia/nemotron-3.5-lightning:free'];
+    for (const model of openrouterModels) {
+      try {
+        const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${openrouterKey}`
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: 700,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt }
+            ]
+          })
+        });
 
-      if (r.ok) {
-        const data = await r.json();
-        const reply = data.choices?.[0]?.message?.content;
-        if (reply) {
-          res.status(200).json({ reply, provider: 'openrouter' });
-          return;
+        if (r.ok) {
+          const data = await r.json();
+          let reply = data.choices?.[0]?.message?.content;
+          if (reply) {
+            reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+            res.status(200).json({ reply, provider: `openrouter (${model})` });
+            return;
+          }
         }
-      } else {
+      } catch (err) {
+        console.error(`OpenRouter request failed for model ${model}:`, err);
+      }
+    }
+  } else {
         console.error('OpenRouter error:', r.status, await r.text());
       }
     } catch (err) {
