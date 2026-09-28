@@ -1,7 +1,7 @@
 /**
  * ReuLive - Admin Dashboard Controller
- * Handles authentication (admin.one / Rona12345), telemetry metrics,
- * transcript review, and full database backups.
+ * Handles authentication (admin.one / Rona12345), 100% REAL telemetry & meeting data,
+ * interactive Chart.js analytics graphics, transcript review, and full database backups.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -10,6 +10,10 @@ document.addEventListener('DOMContentLoaded', () => {
   let telemetryData = [];
   let meetingsData = [];
   let currentViewingMeeting = null;
+  let chartInstances = {};
+
+  // Initialize client DBEngine for IndexedDB local sync
+  const clientDB = window.DBEngine ? new window.DBEngine() : null;
 
   // DOM Elements - Login
   const loginSection = document.getElementById('adminLoginSection');
@@ -26,14 +30,26 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnAdminThemeToggle = document.getElementById('btnAdminThemeToggle');
   const btnExportDb = document.getElementById('btnExportDb');
   const btnDownloadBackupJson = document.getElementById('btnDownloadBackupJson');
+  const btnSyncLocalMeetings = document.getElementById('btnSyncLocalMeetings');
+  const btnSyncMeetingsTab = document.getElementById('btnSyncMeetingsTab');
+  const btnClearTelemetry = document.getElementById('btnClearTelemetry');
+  const btnClearTelemetryTab = document.getElementById('btnClearTelemetryTab');
   const dbStatusBadge = document.getElementById('dbStatusBadge');
 
   // DOM Elements - KPIs
   const kpiTotalVisits = document.getElementById('kpiTotalVisits');
   const kpiActiveNow = document.getElementById('kpiActiveNow');
   const kpiTotalMeetings = document.getElementById('kpiTotalMeetings');
-  const kpiAvgDuration = document.getElementById('kpiAvgDuration');
+  const kpiTotalMinutes = document.getElementById('kpiTotalMinutes');
+  const kpiAvgMeetingDuration = document.getElementById('kpiAvgMeetingDuration');
+  const kpiTotalCallTime = document.getElementById('kpiTotalCallTime');
+  const kpiTotalInterventions = document.getElementById('kpiTotalInterventions');
+  const kpiAvgInterventions = document.getElementById('kpiAvgInterventions');
   const kpiTotalCountries = document.getElementById('kpiTotalCountries');
+  const kpiDominantSentiment = document.getElementById('kpiDominantSentiment');
+  const badgeCountMeetings = document.getElementById('badgeCountMeetings');
+  const badgeCountVisits = document.getElementById('badgeCountVisits');
+  const chartActivitySummary = document.getElementById('chartActivitySummary');
 
   // DOM Elements - Tabs & Tables
   const navTabBtns = document.querySelectorAll('.nav-tab-btn');
@@ -78,6 +94,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnAdminThemeToggle) {
       const icon = btnAdminThemeToggle.querySelector('i');
       if (icon) icon.className = theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+    }
+    // Re-render charts with updated theme colors
+    if (meetingsData.length > 0 || telemetryData.length > 0) {
+      const computed = computeRealStats(meetingsData, telemetryData);
+      renderAllCharts(computed, meetingsData, telemetryData);
     }
   };
 
@@ -130,7 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
       loginErrorMsg.classList.add('is-hidden');
       btnLoginSubmit.disabled = true;
-      btnLoginSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Verificando...';
+      btnLoginSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Validando...';
 
       const username = adminUsernameInput.value.trim();
       const password = adminPasswordInput.value;
@@ -172,12 +193,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================
-  // 3. DATA FETCHING
+  // 3. 100% REAL DATA FETCHING & SYNCHRONIZATION
   // ==========================================
   async function loadAllData() {
     if (!adminToken) return;
 
     try {
+      // 1. Fetch server dashboard data
       const res = await fetch('/api/admin?action=get_dashboard', {
         headers: { Authorization: `Bearer ${adminToken}` }
       });
@@ -191,39 +213,592 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const data = await res.json();
-      telemetryData = data.telemetry || [];
-      meetingsData = data.meetings || [];
+      let serverMeetings = data.meetings || [];
+      telemetryData = (data.telemetry || []).filter(s => !s.isBot);
 
-      // Update KPIs
-      updateKPIs(data.stats);
+      // 2. Fetch local IndexedDB meetings from this browser to avoid any data loss
+      let localMeetings = [];
+      if (clientDB) {
+        try {
+          localMeetings = await clientDB.getMeetings();
+        } catch (e) {
+          console.warn('Could not read local IndexedDB:', e);
+        }
+      }
+
+      // 3. Merge server and local meetings by unique ID
+      const meetingMap = new Map();
+      serverMeetings.forEach(m => { if (m && m.id) meetingMap.set(m.id, m); });
+
+      const missingOnServer = [];
+      localMeetings.forEach(m => {
+        if (m && m.id) {
+          if (!meetingMap.has(m.id)) {
+            missingOnServer.push(m);
+          }
+          meetingMap.set(m.id, { ...meetingMap.get(m.id), ...m });
+        }
+      });
+
+      // If we have local meetings not on the server, auto-sync them to the backend
+      if (missingOnServer.length > 0) {
+        fetch('/api/admin?action=sync_meetings', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`
+          },
+          body: JSON.stringify({ meetings: missingOnServer })
+        }).catch(err => console.warn('Background sync error:', err));
+      }
+
+      // Convert map to sorted array (newest first)
+      meetingsData = Array.from(meetingMap.values()).sort((a, b) =>
+        new Date(b.timestamp || 0) - new Date(a.timestamp || 0)
+      );
+
+      // 4. Calculate 100% REAL aggregated statistics directly from the verified records
+      const realStats = computeRealStats(meetingsData, telemetryData);
+
+      // Update KPIs & Badges
+      updateKPIs(realStats);
 
       // Render Tables
       renderTelemetryTable(telemetryData);
       renderMeetingsTable(meetingsData);
-      renderMetrics(data.stats);
+      renderMetrics(realStats);
 
-      if (dbEngineType && data.stats) {
-        dbEngineType.textContent = data.stats.storageType || 'Local JSON + Cliente';
+      // Render All 8 Interactive Visual Charts
+      renderAllCharts(realStats, meetingsData, telemetryData);
+
+      if (dbEngineType) {
+        dbEngineType.textContent = (data.stats && data.stats.storageType)
+          ? data.stats.storageType
+          : 'Almacenamiento Local Resiliente (Sync)';
       }
     } catch (err) {
       console.warn('Error loading admin dashboard data:', err);
     }
   }
 
+  /**
+   * Strictly computes statistics from actual verified records (No simulations, no fakes)
+   */
+  function computeRealStats(meetings, telemetry) {
+    const realSessions = (telemetry || []).filter(s => !s.isBot);
+    const totalVisits = realSessions.length;
+    const now = Date.now();
+    const activeNow = realSessions.filter(s => s.isOnline && (now - new Date(s.lastSeen).getTime() < 120000)).length;
+
+    const totalMeetings = (meetings || []).length;
+    const totalMeetingSeconds = (meetings || []).reduce((acc, m) => acc + (m.durationSeconds || 0), 0);
+    const totalMeetingMinutes = Math.round(totalMeetingSeconds / 60);
+
+    const avgDurationSeconds = totalVisits > 0
+      ? Math.round(realSessions.reduce((acc, s) => acc + (s.durationSeconds || 0), 0) / totalVisits)
+      : 0;
+
+    const avgMeetingDurationSeconds = totalMeetings > 0
+      ? Math.round(totalMeetingSeconds / totalMeetings)
+      : 0;
+
+    let totalInterventions = 0;
+    let speakerTurns = { user: 0, interlocutor: 0 };
+    const topicCounts = {};
+    const sentimentCounts = {};
+    const durationBuckets = {
+      '< 1 min': 0,
+      '1 - 5 min': 0,
+      '5 - 15 min': 0,
+      '15 - 30 min': 0,
+      '> 30 min': 0
+    };
+
+    (meetings || []).forEach(m => {
+      const count = m.interventionsCount || (m.transcript ? m.transcript.length : 0);
+      totalInterventions += count;
+
+      (m.transcript || []).forEach(t => {
+        if (t.speakerType === 'user' || t.speaker === 'Tú') {
+          speakerTurns.user++;
+        } else {
+          speakerTurns.interlocutor++;
+        }
+      });
+
+      const t = m.topic || 'Coordinación General';
+      topicCounts[t] = (topicCounts[t] || 0) + 1;
+
+      const s = m.sentiment || 'Neutral';
+      sentimentCounts[s] = (sentimentCounts[s] || 0) + 1;
+
+      const secs = m.durationSeconds || 0;
+      if (secs < 60) durationBuckets['< 1 min']++;
+      else if (secs < 300) durationBuckets['1 - 5 min']++;
+      else if (secs < 900) durationBuckets['5 - 15 min']++;
+      else if (secs < 1800) durationBuckets['15 - 30 min']++;
+      else durationBuckets['> 30 min']++;
+    });
+
+    const avgInterventions = totalMeetings > 0 ? Math.round(totalInterventions / totalMeetings) : 0;
+
+    // Countries breakdown
+    const countryCounts = {};
+    realSessions.forEach(s => {
+      const c = s.country || 'Desconocido';
+      countryCounts[c] = (countryCounts[c] || 0) + 1;
+    });
+
+    // Devices breakdown
+    const deviceCounts = {};
+    realSessions.forEach(s => {
+      const d = s.device || 'Escritorio';
+      deviceCounts[d] = (deviceCounts[d] || 0) + 1;
+    });
+
+    // Browsers breakdown
+    const browserCounts = {};
+    realSessions.forEach(s => {
+      const b = s.browser || 'Navegador Web';
+      browserCounts[b] = (browserCounts[b] || 0) + 1;
+    });
+
+    // Timeline breakdown (by date YYYY-MM-DD)
+    const timelineMap = {};
+    realSessions.forEach(s => {
+      const date = new Date(s.firstSeen || Date.now()).toISOString().slice(0, 10);
+      if (!timelineMap[date]) timelineMap[date] = { date, visits: 0, meetings: 0 };
+      timelineMap[date].visits++;
+    });
+    (meetings || []).forEach(m => {
+      const date = new Date(m.timestamp || Date.now()).toISOString().slice(0, 10);
+      if (!timelineMap[date]) timelineMap[date] = { date, visits: 0, meetings: 0 };
+      timelineMap[date].meetings++;
+    });
+
+    const timeline = Object.values(timelineMap).sort((a, b) => a.date.localeCompare(b.date));
+
+    // Dominant sentiment
+    let dominantSentiment = 'Neutral';
+    let maxSentimentCount = 0;
+    Object.entries(sentimentCounts).forEach(([sent, cnt]) => {
+      if (cnt > maxSentimentCount) {
+        maxSentimentCount = cnt;
+        dominantSentiment = sent;
+      }
+    });
+
+    return {
+      totalVisits,
+      activeNow,
+      totalMeetings,
+      totalMeetingSeconds,
+      totalMeetingMinutes,
+      avgDurationSeconds,
+      avgDurationFormatted: formatSeconds(avgDurationSeconds),
+      avgMeetingDurationSeconds,
+      avgMeetingDurationFormatted: formatSeconds(avgMeetingDurationSeconds),
+      totalMeetingDurationFormatted: formatSeconds(totalMeetingSeconds),
+      totalInterventions,
+      avgInterventions,
+      dominantSentiment,
+      countryCounts,
+      topicCounts,
+      sentimentCounts,
+      deviceCounts,
+      browserCounts,
+      durationBuckets,
+      speakerTurns,
+      timeline
+    };
+  }
+
   function updateKPIs(stats) {
     if (!stats) return;
-    if (kpiTotalVisits) kpiTotalVisits.textContent = stats.totalVisits || telemetryData.length;
-    if (kpiActiveNow) kpiActiveNow.textContent = `${stats.activeNow || 0} en línea ahora`;
-    if (kpiTotalMeetings) kpiTotalMeetings.textContent = stats.totalMeetings || meetingsData.length;
-    if (kpiAvgDuration) kpiAvgDuration.textContent = stats.avgDurationFormatted || '0s';
+    if (kpiTotalVisits) kpiTotalVisits.textContent = stats.totalVisits;
+    if (kpiActiveNow) kpiActiveNow.textContent = `${stats.activeNow} en línea ahora`;
+
+    if (kpiTotalMeetings) kpiTotalMeetings.textContent = stats.totalMeetings;
+    if (kpiTotalMinutes) kpiTotalMinutes.textContent = `${stats.totalMeetingMinutes} min de audio`;
+
+    if (kpiAvgMeetingDuration) kpiAvgMeetingDuration.textContent = stats.avgMeetingDurationFormatted;
+    if (kpiTotalCallTime) kpiTotalCallTime.textContent = `Total: ${stats.totalMeetingDurationFormatted}`;
+
+    if (kpiTotalInterventions) kpiTotalInterventions.textContent = stats.totalInterventions;
+    if (kpiAvgInterventions) kpiAvgInterventions.textContent = `${stats.avgInterventions} turnos por llamada`;
+
     if (kpiTotalCountries) {
       const count = Object.keys(stats.countryCounts || {}).length;
       kpiTotalCountries.textContent = count;
     }
+
+    if (kpiDominantSentiment) {
+      kpiDominantSentiment.textContent = stats.dominantSentiment;
+    }
+
+    if (badgeCountMeetings) badgeCountMeetings.textContent = stats.totalMeetings;
+    if (badgeCountVisits) badgeCountVisits.textContent = stats.totalVisits;
+    if (chartActivitySummary) {
+      chartActivitySummary.textContent = `${stats.totalVisits} visitas • ${stats.totalMeetings} llamadas`;
+    }
   }
 
   // ==========================================
-  // 4. RENDER TELEMETRY TABLE
+  // 4. CHART.JS VISUAL ANALYTICS ENGINE
+  // ==========================================
+  function renderAllCharts(stats, meetings, telemetry) {
+    if (!window.Chart) {
+      console.warn('Chart.js not loaded');
+      return;
+    }
+
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const textColor = isDark ? '#cbd5e1' : '#334155';
+    const textDim = isDark ? '#64748b' : '#94a3b8';
+    const gridColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(15, 23, 42, 0.06)';
+
+    // Palette tokens
+    const brandBlue = isDark ? '#3b82f6' : '#1d68f0';
+    const brandBlueSoft = isDark ? 'rgba(59, 130, 246, 0.2)' : 'rgba(29, 104, 240, 0.15)';
+    const accentEmerald = '#10b981';
+    const accentEmeraldSoft = 'rgba(16, 185, 129, 0.2)';
+    const accentLavender = '#6366f1';
+    const accentSky = '#0284c7';
+    const accentAmber = '#f59e0b';
+    const accentDanger = '#ef4444';
+
+    // Helper to safely destroy existing chart before re-creating
+    const setupCanvas = (id) => {
+      if (chartInstances[id]) {
+        chartInstances[id].destroy();
+        delete chartInstances[id];
+      }
+      const canvas = document.getElementById(id);
+      if (!canvas) return null;
+      return canvas.getContext('2d');
+    };
+
+    // ----------------------------------------------------
+    // Chart 1: Activity Timeline (Visits & Meetings)
+    // ----------------------------------------------------
+    const ctxTimeline = setupCanvas('chartActivityTimeline');
+    if (ctxTimeline) {
+      const labels = stats.timeline.length > 0
+        ? stats.timeline.map(t => t.date)
+        : [new Date().toISOString().slice(0, 10)];
+      const visitData = stats.timeline.length > 0
+        ? stats.timeline.map(t => t.visits)
+        : [0];
+      const meetingData = stats.timeline.length > 0
+        ? stats.timeline.map(t => t.meetings)
+        : [0];
+
+      chartInstances.timeline = new Chart(ctxTimeline, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Visitas Reales',
+              data: visitData,
+              borderColor: brandBlue,
+              backgroundColor: brandBlueSoft,
+              tension: 0.35,
+              fill: true,
+              pointBackgroundColor: brandBlue,
+              pointRadius: 4,
+              pointHoverRadius: 6
+            },
+            {
+              label: 'Reuniones Grabadas',
+              data: meetingData,
+              borderColor: accentEmerald,
+              backgroundColor: accentEmeraldSoft,
+              tension: 0.35,
+              fill: true,
+              pointBackgroundColor: accentEmerald,
+              pointRadius: 4,
+              pointHoverRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              labels: { color: textColor, font: { family: 'Plus Jakarta Sans', size: 12, weight: 600 } }
+            },
+            tooltip: {
+              backgroundColor: isDark ? '#1e293b' : '#0f172a',
+              titleColor: '#ffffff',
+              bodyColor: '#e2e8f0',
+              padding: 10,
+              cornerRadius: 8
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: gridColor },
+              ticks: { color: textDim, font: { family: 'Plus Jakarta Sans', size: 11 } }
+            },
+            y: {
+              beginAtZero: true,
+              grid: { color: gridColor },
+              ticks: { color: textDim, precision: 0, font: { family: 'Plus Jakarta Sans', size: 11 } }
+            }
+          }
+        }
+      });
+    }
+
+    // ----------------------------------------------------
+    // Chart 2: Countries Distribution (Doughnut)
+    // ----------------------------------------------------
+    const ctxCountries = setupCanvas('chartCountries');
+    if (ctxCountries) {
+      const countryEntries = Object.entries(stats.countryCounts || {}).sort((a, b) => b[1] - a[1]);
+      const labels = countryEntries.length > 0 ? countryEntries.map(e => e[0]) : ['Sin datos aún'];
+      const data = countryEntries.length > 0 ? countryEntries.map(e => e[1]) : [1];
+      const colors = countryEntries.length > 0
+        ? [brandBlue, accentSky, accentLavender, accentEmerald, accentAmber, '#ec4899', '#8b5cf6', '#14b8a6']
+        : [isDark ? '#334155' : '#cbd5e1'];
+
+      chartInstances.countries = new Chart(ctxCountries, {
+        type: 'doughnut',
+        data: {
+          labels,
+          datasets: [{
+            data,
+            backgroundColor: colors,
+            borderWidth: isDark ? 2 : 1,
+            borderColor: isDark ? '#0e1627' : '#ffffff'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '65%',
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: { color: textColor, font: { family: 'Plus Jakarta Sans', size: 11 }, boxWidth: 12 }
+            }
+          }
+        }
+      });
+    }
+
+    // ----------------------------------------------------
+    // Chart 3: Top Topics (Horizontal Bar)
+    // ----------------------------------------------------
+    const ctxTopics = setupCanvas('chartTopics');
+    if (ctxTopics) {
+      const topicEntries = Object.entries(stats.topicCounts || {}).sort((a, b) => b[1] - a[1]).slice(0, 6);
+      const labels = topicEntries.length > 0 ? topicEntries.map(e => e[0]) : ['Esperando reuniones'];
+      const data = topicEntries.length > 0 ? topicEntries.map(e => e[1]) : [0];
+
+      chartInstances.topics = new Chart(ctxTopics, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Reuniones',
+            data,
+            backgroundColor: accentLavender,
+            borderRadius: 6
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            x: {
+              beginAtZero: true,
+              grid: { color: gridColor },
+              ticks: { color: textDim, precision: 0 }
+            },
+            y: {
+              grid: { display: false },
+              ticks: { color: textColor, font: { family: 'Plus Jakarta Sans', size: 11, weight: 600 } }
+            }
+          }
+        }
+      });
+    }
+
+    // ----------------------------------------------------
+    // Chart 4: Sentiment Breakdown (Doughnut)
+    // ----------------------------------------------------
+    const ctxSentiment = setupCanvas('chartSentiment');
+    if (ctxSentiment) {
+      const sMap = stats.sentimentCounts || {};
+      const labels = ['Positivo / Colaborativo', 'Neutral / Analítico', 'Atención Requerida'];
+      const data = [
+        sMap['Positivo / Colaborativo'] || 0,
+        sMap['Neutral'] || sMap['Neutral / Analítico'] || sMap['Analítico / Técnico'] || 0,
+        sMap['Atención Requerida'] || sMap['Crítico / Alerta'] || 0
+      ];
+
+      chartInstances.sentiment = new Chart(ctxSentiment, {
+        type: 'doughnut',
+        data: {
+          labels,
+          datasets: [{
+            data: data.some(v => v > 0) ? data : [1, 0, 0],
+            backgroundColor: data.some(v => v > 0)
+              ? [accentEmerald, brandBlue, accentDanger]
+              : [isDark ? '#334155' : '#cbd5e1', '#334155', '#334155'],
+            borderWidth: isDark ? 2 : 1,
+            borderColor: isDark ? '#0e1627' : '#ffffff'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '62%',
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: { color: textColor, font: { family: 'Plus Jakarta Sans', size: 11 }, boxWidth: 12 }
+            }
+          }
+        }
+      });
+    }
+
+    // ----------------------------------------------------
+    // Chart 5: Meeting Durations (Bar)
+    // ----------------------------------------------------
+    const ctxDurations = setupCanvas('chartDurations');
+    if (ctxDurations) {
+      const buckets = stats.durationBuckets || {};
+      chartInstances.durations = new Chart(ctxDurations, {
+        type: 'bar',
+        data: {
+          labels: Object.keys(buckets),
+          datasets: [{
+            label: 'Número de Reuniones',
+            data: Object.values(buckets),
+            backgroundColor: accentAmber,
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: textDim, font: { size: 11 } } },
+            y: { beginAtZero: true, grid: { color: gridColor }, ticks: { color: textDim, precision: 0 } }
+          }
+        }
+      });
+    }
+
+    // ----------------------------------------------------
+    // Chart 6: Devices & Platforms (Doughnut)
+    // ----------------------------------------------------
+    const ctxDevices = setupCanvas('chartDevices');
+    if (ctxDevices) {
+      const devEntries = Object.entries(stats.deviceCounts || {});
+      const labels = devEntries.length > 0 ? devEntries.map(e => e[0]) : ['Escritorio', 'Móvil'];
+      const data = devEntries.length > 0 ? devEntries.map(e => e[1]) : [1, 0];
+
+      chartInstances.devices = new Chart(ctxDevices, {
+        type: 'doughnut',
+        data: {
+          labels,
+          datasets: [{
+            data,
+            backgroundColor: [brandBlue, accentSky, accentLavender],
+            borderWidth: isDark ? 2 : 1,
+            borderColor: isDark ? '#0e1627' : '#ffffff'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '65%',
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: { color: textColor, font: { family: 'Plus Jakarta Sans', size: 11 }, boxWidth: 12 }
+            }
+          }
+        }
+      });
+    }
+
+    // ----------------------------------------------------
+    // Chart 7: Speaker Turns (Bar)
+    // ----------------------------------------------------
+    const ctxSpeakerTurns = setupCanvas('chartSpeakerTurns');
+    if (ctxSpeakerTurns) {
+      const turns = stats.speakerTurns || { user: 0, interlocutor: 0 };
+      chartInstances.speakerTurns = new Chart(ctxSpeakerTurns, {
+        type: 'bar',
+        data: {
+          labels: ['Tú (Usuario)', 'Interlocutores'],
+          datasets: [{
+            label: 'Turnos de Palabra',
+            data: [turns.user, turns.interlocutor],
+            backgroundColor: [brandBlue, accentLavender],
+            borderRadius: 8
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: textColor, font: { weight: 600 } } },
+            y: { beginAtZero: true, grid: { color: gridColor }, ticks: { color: textDim, precision: 0 } }
+          }
+        }
+      });
+    }
+
+    // ----------------------------------------------------
+    // Chart 8: Web Browsers (Pie)
+    // ----------------------------------------------------
+    const ctxBrowsers = setupCanvas('chartBrowsers');
+    if (ctxBrowsers) {
+      const bEntries = Object.entries(stats.browserCounts || {}).sort((a, b) => b[1] - a[1]);
+      const labels = bEntries.length > 0 ? bEntries.map(e => e[0]) : ['Chrome'];
+      const data = bEntries.length > 0 ? bEntries.map(e => e[1]) : [1];
+
+      chartInstances.browsers = new Chart(ctxBrowsers, {
+        type: 'pie',
+        data: {
+          labels,
+          datasets: [{
+            data,
+            backgroundColor: [accentSky, brandBlue, accentEmerald, accentAmber, '#ec4899'],
+            borderWidth: isDark ? 2 : 1,
+            borderColor: isDark ? '#0e1627' : '#ffffff'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: { color: textColor, font: { family: 'Plus Jakarta Sans', size: 11 }, boxWidth: 12 }
+            }
+          }
+        }
+      });
+    }
+  }
+
+  // ==========================================
+  // 5. RENDER TELEMETRY TABLE
   // ==========================================
   function renderTelemetryTable(sessions) {
     if (!telemetryTableBody) return;
@@ -232,7 +807,7 @@ document.addEventListener('DOMContentLoaded', () => {
       telemetryTableBody.innerHTML = `
         <tr>
           <td colspan="6" class="text-center py-4 text-muted">
-            <i class="fa-solid fa-inbox"></i> No hay registros de visitas aún.
+            <i class="fa-solid fa-inbox"></i> No hay registros de visitas reales aún.
           </td>
         </tr>
       `;
@@ -263,7 +838,7 @@ document.addEventListener('DOMContentLoaded', () => {
               <span class="flag-emoji">${countryFlag}</span>
               <div>
                 <strong>${s.country || 'Desconocido'}</strong>
-                <span class="text-dim text-xs">${s.city !== 'Desconocida' ? s.city : ''}</span>
+                <span class="text-dim text-xs">${s.city && s.city !== 'Desconocida' ? s.city : ''}</span>
               </div>
             </div>
           </td>
@@ -281,7 +856,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================
-  // 5. RENDER MEETINGS TABLE
+  // 6. RENDER MEETINGS TABLE
   // ==========================================
   function renderMeetingsTable(meetings) {
     if (!meetingsTableBody) return;
@@ -290,7 +865,7 @@ document.addEventListener('DOMContentLoaded', () => {
       meetingsTableBody.innerHTML = `
         <tr>
           <td colspan="6" class="text-center py-4 text-muted">
-            <i class="fa-solid fa-microphone-slash"></i> Aún no se han guardado reuniones grabadas.
+            <i class="fa-solid fa-microphone-slash"></i> Aún no se han guardado reuniones grabadas reales.
           </td>
         </tr>
       `;
@@ -305,7 +880,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const sentiment = m.sentiment || 'Neutral';
 
       return `
-        <tr>
+        <tr data-id="${m.id}">
           <td>
             <strong>${dateStr}</strong>
           </td>
@@ -321,9 +896,14 @@ document.addEventListener('DOMContentLoaded', () => {
           <td><span class="interventions-badge">${count} turnos</span></td>
           <td><span class="sentiment-pill">${sentiment}</span></td>
           <td>
-            <button class="btn btn-primary btn-xs btn-view-transcript" data-id="${m.id}">
-              <i class="fa-regular fa-eye"></i> Ver Detalle
-            </button>
+            <div class="table-actions-cell" style="display: flex; gap: 6px;">
+              <button class="btn btn-primary btn-xs btn-view-transcript" data-id="${m.id}">
+                <i class="fa-regular fa-eye"></i> Ver Detalle
+              </button>
+              <button class="btn btn-outline btn-xs btn-delete-meeting text-danger" data-id="${m.id}" title="Eliminar registro">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
           </td>
         </tr>
       `;
@@ -336,10 +916,37 @@ document.addEventListener('DOMContentLoaded', () => {
         openMeetingModal(id);
       });
     });
+
+    // Attach click listeners to delete buttons
+    document.querySelectorAll('.btn-delete-meeting').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        if (!confirm('¿Seguro que deseas eliminar este registro de reunión? Esta acción no se puede deshacer.')) {
+          return;
+        }
+
+        try {
+          // Delete from server
+          await fetch(`/api/admin?action=delete_meeting&id=${id}`, {
+            headers: { Authorization: `Bearer ${adminToken}` }
+          });
+
+          // Delete from client IndexedDB
+          if (clientDB) {
+            await clientDB.deleteMeeting(id);
+          }
+
+          // Reload data
+          loadAllData();
+        } catch (e) {
+          alert('Error eliminando reunión');
+        }
+      });
+    });
   }
 
   // ==========================================
-  // 6. RENDER METRICS & COUNTRIES
+  // 7. RENDER METRICS & COUNTRIES TEXT LISTS
   // ==========================================
   function renderMetrics(stats) {
     if (!stats) return;
@@ -389,10 +996,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================
-  // 7. TRANSCRIPT MODAL VIEWER
-  // ==========================================
-  // ==========================================
-  // 7. TRANSCRIPT MODAL VIEWER & EXECUTIVE PDF
+  // 8. TRANSCRIPT MODAL VIEWER & EXECUTIVE PDF
   // ==========================================
   function openMeetingModal(meetingId) {
     const meeting = meetingsData.find(m => m.id === meetingId);
@@ -482,21 +1086,24 @@ document.addEventListener('DOMContentLoaded', () => {
     btnCopyTranscript.addEventListener('click', () => {
       if (!currentViewingMeeting || !currentViewingMeeting.transcript) return;
       const text = currentViewingMeeting.transcript
-        .map(t => `[${t.timestamp || ''}] ${t.speaker}: ${t.text}`)
+        .map(t => `[${t.timestamp || '00:00'}] ${t.speaker}: ${t.text}`)
         .join('\n');
-
       navigator.clipboard.writeText(text).then(() => {
-        btnCopyTranscript.innerHTML = '<i class="fa-solid fa-check"></i> Copiado';
-        setTimeout(() => {
-          btnCopyTranscript.innerHTML = '<i class="fa-regular fa-copy"></i> Copiar Texto';
-        }, 2000);
+        const orig = btnCopyTranscript.innerHTML;
+        btnCopyTranscript.innerHTML = '<i class="fa-solid fa-check text-emerald"></i> ¡Copiado!';
+        setTimeout(() => btnCopyTranscript.innerHTML = orig, 2000);
       });
     });
   }
 
-  // Executive PDF Generator
+  // =======================================================
+  // EXECUTIVE PDF GENERATOR
+  // =======================================================
   const generateExecutivePDF = (meeting) => {
     if (!meeting) return;
+
+    const existing = document.getElementById('adminPdfExportDoc');
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
 
     const container = document.createElement('div');
     container.className = 'executive-pdf-container';
@@ -543,7 +1150,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="pdf-brand" style="display: flex; align-items: center; gap: 12px;">
           <img src="assets/logo.jpg" style="width: 44px; height: 44px; border-radius: 10px; object-fit: cover; box-shadow: 0 2px 8px rgba(29, 104, 240, 0.25);" alt="Reu.live">
           <div>
-            <h2 style="margin: 0; font-size: 20pt; font-weight: 800; color: #0f172a; letter-spacing: -0.5px;">Reu<span style="color: #1d68f0;">.live</span> AI</h2>
+            <h2 style="margin: 0; font-size: 20pt; font-weight: 800; color: #0f172a; letter-spacing: -0.5px;">Reu<span style="color: #1d68f0;">.live</span></h2>
             <p style="margin: 2px 0 0 0; font-size: 8.5pt; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">Acta & Informe Ejecutivo de Reunión (Copia Administrativa)</p>
           </div>
         </div>
@@ -674,7 +1281,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!currentViewingMeeting) return;
       const m = currentViewingMeeting;
 
-      let md = `# Informe de Reunión ReuLive AI\n\n`;
+      let md = `# Informe de Reunión Reu.live\n\n`;
       md += `**Fecha:** ${m.dateFormatted || m.timestamp}\n`;
       md += `**Tema:** ${m.topic}\n`;
       md += `**Duración:** ${m.durationFormatted}\n`;
@@ -701,7 +1308,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================
-  // 8. TABS & SEARCH FILTERS
+  // 9. TABS & SEARCH FILTERS
   // ==========================================
   navTabBtns.forEach(btn => {
     btn.addEventListener('click', () => {
@@ -712,6 +1319,13 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.classList.add('active');
       const targetPane = document.getElementById(targetTab);
       if (targetPane) targetPane.classList.add('active');
+
+      // If switching to charts tab, trigger resize on all charts
+      if (targetTab === 'tabCharts') {
+        Object.values(chartInstances).forEach(chart => {
+          if (chart && typeof chart.resize === 'function') chart.resize();
+        });
+      }
     });
   });
 
@@ -722,7 +1336,8 @@ document.addEventListener('DOMContentLoaded', () => {
         (s.country && s.country.toLowerCase().includes(q)) ||
         (s.city && s.city.toLowerCase().includes(q)) ||
         (s.url && s.url.toLowerCase().includes(q)) ||
-        (s.device && s.device.toLowerCase().includes(q))
+        (s.device && s.device.toLowerCase().includes(q)) ||
+        (s.browser && s.browser.toLowerCase().includes(q))
       );
       renderTelemetryTable(filtered);
     });
@@ -733,6 +1348,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const q = e.target.value.toLowerCase().trim();
       const filtered = meetingsData.filter(m =>
         (m.topic && m.topic.toLowerCase().includes(q)) ||
+        (m.sentiment && m.sentiment.toLowerCase().includes(q)) ||
+        (m.dateFormatted && m.dateFormatted.toLowerCase().includes(q)) ||
         (m.transcript && m.transcript.some(t => t.text.toLowerCase().includes(q)))
       );
       renderMeetingsTable(filtered);
@@ -742,8 +1359,68 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnRefreshTelemetry) btnRefreshTelemetry.addEventListener('click', loadAllData);
   if (btnRefreshMeetings) btnRefreshMeetings.addEventListener('click', loadAllData);
 
+  // Manual Local Sync Button
+  const triggerManualSync = async () => {
+    const btn = btnSyncLocalMeetings || btnSyncMeetingsTab;
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Sincronizando...';
+      btn.disabled = true;
+
+      try {
+        if (clientDB) {
+          const local = await clientDB.getMeetings();
+          if (local.length > 0) {
+            await fetch('/api/admin?action=sync_meetings', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${adminToken}`
+              },
+              body: JSON.stringify({ meetings: local })
+            });
+          }
+        }
+        await loadAllData();
+        btn.innerHTML = '<i class="fa-solid fa-check text-emerald"></i> ¡Sincronizado!';
+        setTimeout(() => {
+          btn.innerHTML = orig;
+          btn.disabled = false;
+        }, 1500);
+      } catch (e) {
+        alert('Error sincronizando reuniones locales');
+        btn.innerHTML = orig;
+        btn.disabled = false;
+      }
+    }
+  };
+
+  if (btnSyncLocalMeetings) btnSyncLocalMeetings.addEventListener('click', triggerManualSync);
+  if (btnSyncMeetingsTab) btnSyncMeetingsTab.addEventListener('click', triggerManualSync);
+
+  // Purge test / bot visits
+  const triggerClearTelemetry = async () => {
+    if (!confirm('¿Deseas filtrar las visitas de prueba y bots automatizados para ver únicamente usuarios y estadísticas reales?')) {
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/admin?action=clear_telemetry&onlyBots=true', {
+        headers: { Authorization: `Bearer ${adminToken}` }
+      });
+      if (res.ok) {
+        await loadAllData();
+      }
+    } catch (e) {
+      alert('Error purgando visitas de prueba');
+    }
+  };
+
+  if (btnClearTelemetry) btnClearTelemetry.addEventListener('click', triggerClearTelemetry);
+  if (btnClearTelemetryTab) btnClearTelemetryTab.addEventListener('click', triggerClearTelemetry);
+
   // ==========================================
-  // 9. DATABASE BACKUP EXPORT
+  // 10. DATABASE BACKUP EXPORT
   // ==========================================
   const triggerDatabaseBackup = async () => {
     if (!adminToken) return;
@@ -774,16 +1451,18 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnDownloadBackupJson) btnDownloadBackupJson.addEventListener('click', triggerDatabaseBackup);
 
   // ==========================================
-  // 10. HELPERS
+  // 11. HELPERS
   // ==========================================
   function formatSeconds(secs) {
+    if (!secs || secs <= 0) return '0s';
     const m = Math.floor(secs / 60);
     const s = secs % 60;
     if (m >= 60) {
       const h = Math.floor(m / 60);
       return `${h}h ${m % 60}m`;
     }
-    return `${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
   }
 
   function formatTimeAgo(dateStr) {
@@ -801,7 +1480,7 @@ document.addEventListener('DOMContentLoaded', () => {
       .toUpperCase()
       .split('')
       .map(char => 127397 + char.charCodeAt(0));
-    return String.fromCodePoint(...codePoints);
+    return String.fromPoint ? String.fromPoint(...codePoints) : (String.fromCodePoint ? String.fromCodePoint(...codePoints) : '🌐');
   }
 
   // Initial check

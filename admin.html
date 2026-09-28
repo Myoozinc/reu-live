@@ -80,6 +80,14 @@
           <i class="fa-solid fa-moon"></i>
         </button>
 
+        <button id="btnSyncLocalMeetings" class="btn btn-primary btn-sm" title="Sincronizar reuniones guardadas en este navegador con el servidor">
+          <i class="fa-solid fa-rotate"></i> <span class="hide-mobile">Sincronizar Locales</span>
+        </button>
+
+        <button id="btnClearTelemetry" class="btn btn-outline btn-sm text-dim" title="Filtrar bots y purgar visitas de prueba">
+          <i class="fa-solid fa-broom"></i> <span class="hide-mobile">Purgar Pruebas</span>
+        </button>
+
         <button id="btnExportDb" class="btn btn-outline btn-sm" title="Descargar respaldo de base de datos">
           <i class="fa-solid fa-download"></i> <span class="hide-mobile">Respaldo DB</span>
         </button>
@@ -96,94 +104,214 @@
 
     <main class="admin-main">
 
-      <!-- KPI Summary Cards -->
+      <!-- KPI Summary Cards (100% Registros Reales) -->
       <section class="kpi-grid">
         <div class="kpi-card glass-panel">
           <div class="kpi-icon icon-sky"><i class="fa-solid fa-users"></i></div>
           <div class="kpi-info">
-            <span class="kpi-label">Visitas Totales</span>
+            <span class="kpi-label">Visitas Reales</span>
             <h3 class="kpi-value" id="kpiTotalVisits">0</h3>
-            <span class="kpi-sub" id="kpiActiveNow">0 activas ahora</span>
+            <span class="kpi-sub" id="kpiActiveNow">0 en línea ahora</span>
           </div>
         </div>
 
         <div class="kpi-card glass-panel">
           <div class="kpi-icon icon-sage"><i class="fa-solid fa-video"></i></div>
           <div class="kpi-info">
-            <span class="kpi-label">Llamadas Grabadas</span>
+            <span class="kpi-label">Reuniones Grabadas</span>
             <h3 class="kpi-value" id="kpiTotalMeetings">0</h3>
-            <span class="kpi-sub">Con transcripción íntegra</span>
+            <span class="kpi-sub" id="kpiTotalMinutes">0 min de audio grabado</span>
           </div>
         </div>
 
         <div class="kpi-card glass-panel">
           <div class="kpi-icon icon-lavender"><i class="fa-solid fa-clock"></i></div>
           <div class="kpi-info">
-            <span class="kpi-label">Tiempo Promedio en App</span>
-            <h3 class="kpi-value" id="kpiAvgDuration">0s</h3>
-            <span class="kpi-sub">Por sesión de usuario</span>
+            <span class="kpi-label">Duración Promedio</span>
+            <h3 class="kpi-value" id="kpiAvgMeetingDuration">0s</h3>
+            <span class="kpi-sub" id="kpiTotalCallTime">Por reunión</span>
           </div>
         </div>
 
         <div class="kpi-card glass-panel">
-          <div class="kpi-icon icon-terracotta"><i class="fa-solid fa-earth-americas"></i></div>
+          <div class="kpi-icon icon-terracotta"><i class="fa-solid fa-comments"></i></div>
+          <div class="kpi-info">
+            <span class="kpi-label">Intervenciones Transcritas</span>
+            <h3 class="kpi-value" id="kpiTotalInterventions">0</h3>
+            <span class="kpi-sub" id="kpiAvgInterventions">0 turnos por llamada</span>
+          </div>
+        </div>
+
+        <div class="kpi-card glass-panel">
+          <div class="kpi-icon icon-sky"><i class="fa-solid fa-earth-americas"></i></div>
           <div class="kpi-info">
             <span class="kpi-label">Países Alcanzados</span>
             <h3 class="kpi-value" id="kpiTotalCountries">0</h3>
-            <span class="kpi-sub">Usuarios globales</span>
+            <span class="kpi-sub">Geolocalización real</span>
+          </div>
+        </div>
+
+        <div class="kpi-card glass-panel">
+          <div class="kpi-icon icon-emerald"><i class="fa-solid fa-face-smile"></i></div>
+          <div class="kpi-info">
+            <span class="kpi-label">Sentimiento Dominante</span>
+            <h3 class="kpi-value" id="kpiDominantSentiment">Neutral</h3>
+            <span class="kpi-sub">Tono general de diálogo</span>
           </div>
         </div>
       </section>
 
       <!-- Navigation Tabs -->
       <div class="admin-nav-tabs">
-        <button class="nav-tab-btn active" data-tab="tabTelemetry">
-          <i class="fa-solid fa-satellite-dish"></i> Tráfico & Visitantes
+        <button class="nav-tab-btn active" data-tab="tabCharts">
+          <i class="fa-solid fa-chart-pie"></i> Gráficos Estadísticos Reales
         </button>
         <button class="nav-tab-btn" data-tab="tabMeetings">
-          <i class="fa-solid fa-file-lines"></i> Historial de Grabaciones
+          <i class="fa-solid fa-file-lines"></i> Registros de Reuniones (<span id="badgeCountMeetings">0</span>)
+        </button>
+        <button class="nav-tab-btn" data-tab="tabTelemetry">
+          <i class="fa-solid fa-satellite-dish"></i> Tráfico & Visitantes (<span id="badgeCountVisits">0</span>)
         </button>
         <button class="nav-tab-btn" data-tab="tabMetrics">
-          <i class="fa-solid fa-chart-pie"></i> Métricas & Países
+          <i class="fa-solid fa-server"></i> Diagnóstico & Motor DB
         </button>
       </div>
 
       <!-- ==========================================
-           TAB 1: TELEMETRÍA DE VISITANTES
+           TAB 1: GRÁFICOS & ANALÍTICAS VISUALES
            ========================================== -->
-      <div class="tab-pane active" id="tabTelemetry">
-        <div class="table-container glass-panel">
-          <div class="table-header-tools">
-            <div class="search-box">
-              <i class="fa-solid fa-magnifying-glass"></i>
-              <input type="text" id="telemetrySearch" placeholder="Buscar por país, ciudad o URL...">
+      <div class="tab-pane active" id="tabCharts">
+        <div class="charts-dashboard-grid">
+
+          <!-- Gráfico 1: Actividad en el Tiempo (Ancho Completo) -->
+          <div class="chart-card glass-panel chart-card-wide">
+            <div class="chart-header">
+              <div class="chart-title">
+                <i class="fa-solid fa-chart-line text-sky"></i>
+                <div>
+                  <h4>Evolución Cronológica: Visitas y Reuniones Grabadas</h4>
+                  <p class="chart-sub">Frecuencia histórica por día a partir de registros reales</p>
+                </div>
+              </div>
+              <div class="chart-badge" id="chartActivitySummary">0 registros</div>
             </div>
-            <button id="btnRefreshTelemetry" class="btn btn-outline btn-sm">
-              <i class="fa-solid fa-arrows-rotate"></i> Actualizar
-            </button>
+            <div class="chart-canvas-wrapper" style="height: 280px;">
+              <canvas id="chartActivityTimeline"></canvas>
+            </div>
           </div>
 
-          <div class="table-responsive">
-            <table class="admin-table" id="telemetryTable">
-              <thead>
-                <tr>
-                  <th>Estado</th>
-                  <th>Fecha & Hora</th>
-                  <th>País / Ubicación</th>
-                  <th>URL de Entrada</th>
-                  <th>Dispositivo / Navegador</th>
-                  <th>Tiempo en App</th>
-                </tr>
-              </thead>
-              <tbody id="telemetryTableBody">
-                <tr>
-                  <td colspan="6" class="text-center py-4 text-muted">
-                    <i class="fa-solid fa-spinner fa-spin"></i> Cargando visitas...
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <!-- Gráfico 2: Distribución por Países -->
+          <div class="chart-card glass-panel">
+            <div class="chart-header">
+              <div class="chart-title">
+                <i class="fa-solid fa-earth-americas text-sky"></i>
+                <div>
+                  <h4>Procedencia Geográfica</h4>
+                  <p class="chart-sub">Visitantes reales clasificados por país</p>
+                </div>
+              </div>
+            </div>
+            <div class="chart-canvas-wrapper" style="height: 240px;">
+              <canvas id="chartCountries"></canvas>
+            </div>
           </div>
+
+          <!-- Gráfico 3: Temas de Conversación -->
+          <div class="chart-card glass-panel">
+            <div class="chart-header">
+              <div class="chart-title">
+                <i class="fa-solid fa-tags text-lavender"></i>
+                <div>
+                  <h4>Temas Más Discutidos</h4>
+                  <p class="chart-sub">Frecuencia temática detectada en las llamadas</p>
+                </div>
+              </div>
+            </div>
+            <div class="chart-canvas-wrapper" style="height: 240px;">
+              <canvas id="chartTopics"></canvas>
+            </div>
+          </div>
+
+          <!-- Gráfico 4: Sentimiento y Tono Emocional -->
+          <div class="chart-card glass-panel">
+            <div class="chart-header">
+              <div class="chart-title">
+                <i class="fa-solid fa-face-smile text-emerald"></i>
+                <div>
+                  <h4>Tono y Sentimiento de Reuniones</h4>
+                  <p class="chart-sub">Proporción de conversaciones analizadas</p>
+                </div>
+              </div>
+            </div>
+            <div class="chart-canvas-wrapper" style="height: 240px;">
+              <canvas id="chartSentiment"></canvas>
+            </div>
+          </div>
+
+          <!-- Gráfico 5: Duración de Llamadas -->
+          <div class="chart-card glass-panel">
+            <div class="chart-header">
+              <div class="chart-title">
+                <i class="fa-solid fa-stopwatch text-amber"></i>
+                <div>
+                  <h4>Duración de las Reuniones</h4>
+                  <p class="chart-sub">Distribución por rangos de tiempo</p>
+                </div>
+              </div>
+            </div>
+            <div class="chart-canvas-wrapper" style="height: 240px;">
+              <canvas id="chartDurations"></canvas>
+            </div>
+          </div>
+
+          <!-- Gráfico 6: Dispositivos y Plataformas -->
+          <div class="chart-card glass-panel">
+            <div class="chart-header">
+              <div class="chart-title">
+                <i class="fa-solid fa-mobile-screen-button text-sky"></i>
+                <div>
+                  <h4>Dispositivos de Entrada</h4>
+                  <p class="chart-sub">Escritorio vs Móvil vs Tablet</p>
+                </div>
+              </div>
+            </div>
+            <div class="chart-canvas-wrapper" style="height: 240px;">
+              <canvas id="chartDevices"></canvas>
+            </div>
+          </div>
+
+          <!-- Gráfico 7: Diarización de Voz -->
+          <div class="chart-card glass-panel">
+            <div class="chart-header">
+              <div class="chart-title">
+                <i class="fa-solid fa-comments text-lavender"></i>
+                <div>
+                  <h4>Diarización y Participación</h4>
+                  <p class="chart-sub">Turnos de palabra: Tú vs Interlocutores</p>
+                </div>
+              </div>
+            </div>
+            <div class="chart-canvas-wrapper" style="height: 240px;">
+              <canvas id="chartSpeakerTurns"></canvas>
+            </div>
+          </div>
+
+          <!-- Gráfico 8: Navegadores Web -->
+          <div class="chart-card glass-panel">
+            <div class="chart-header">
+              <div class="chart-title">
+                <i class="fa-solid fa-compass text-terracotta"></i>
+                <div>
+                  <h4>Navegadores Web</h4>
+                  <p class="chart-sub">Chrome, Safari, Edge, Firefox, etc.</p>
+                </div>
+              </div>
+            </div>
+            <div class="chart-canvas-wrapper" style="height: 240px;">
+              <canvas id="chartBrowsers"></canvas>
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -195,11 +323,16 @@
           <div class="table-header-tools">
             <div class="search-box">
               <i class="fa-solid fa-magnifying-glass"></i>
-              <input type="text" id="meetingsSearch" placeholder="Buscar por tema o acuerdos...">
+              <input type="text" id="meetingsSearch" placeholder="Buscar por tema, sentimiento o fecha...">
             </div>
-            <button id="btnRefreshMeetings" class="btn btn-outline btn-sm">
-              <i class="fa-solid fa-arrows-rotate"></i> Actualizar
-            </button>
+            <div class="table-actions-group">
+              <button id="btnSyncMeetingsTab" class="btn btn-primary btn-sm">
+                <i class="fa-solid fa-rotate"></i> Sincronizar
+              </button>
+              <button id="btnRefreshMeetings" class="btn btn-outline btn-sm">
+                <i class="fa-solid fa-arrows-rotate"></i> Actualizar
+              </button>
+            </div>
           </div>
 
           <div class="table-responsive">
@@ -227,19 +360,63 @@
       </div>
 
       <!-- ==========================================
-           TAB 3: MÉTRICAS & DISTRIBUCIÓN
+           TAB 3: TELEMETRÍA DE VISITANTES REALES
+           ========================================== -->
+      <div class="tab-pane" id="tabTelemetry">
+        <div class="table-container glass-panel">
+          <div class="table-header-tools">
+            <div class="search-box">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="telemetrySearch" placeholder="Buscar por país, ciudad o URL...">
+            </div>
+            <div class="table-actions-group">
+              <button id="btnClearTelemetryTab" class="btn btn-outline btn-sm text-dim" title="Limpiar visitas de prueba">
+                <i class="fa-solid fa-broom"></i> Purgar Pruebas
+              </button>
+              <button id="btnRefreshTelemetry" class="btn btn-outline btn-sm">
+                <i class="fa-solid fa-arrows-rotate"></i> Actualizar
+              </button>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="admin-table" id="telemetryTable">
+              <thead>
+                <tr>
+                  <th>Estado</th>
+                  <th>Fecha & Hora</th>
+                  <th>País / Ubicación</th>
+                  <th>URL de Entrada</th>
+                  <th>Dispositivo / Navegador</th>
+                  <th>Tiempo en App</th>
+                </tr>
+              </thead>
+              <tbody id="telemetryTableBody">
+                <tr>
+                  <td colspan="6" class="text-center py-4 text-muted">
+                    <i class="fa-solid fa-spinner fa-spin"></i> Cargando visitas...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==========================================
+           TAB 4: DIAGNÓSTICO & PERSISTENCIA
            ========================================== -->
       <div class="tab-pane" id="tabMetrics">
         <div class="metrics-grid">
           <div class="metric-card glass-panel">
-            <h3><i class="fa-solid fa-globe text-sky"></i> Distribución por País</h3>
+            <h3><i class="fa-solid fa-globe text-sky"></i> Resumen de Países</h3>
             <div id="countriesDistributionList" class="country-meters-list">
               <p class="text-muted">Cargando datos geográficos...</p>
             </div>
           </div>
 
           <div class="metric-card glass-panel">
-            <h3><i class="fa-solid fa-tags text-lavender"></i> Temas Más Frecuentes</h3>
+            <h3><i class="fa-solid fa-tags text-lavender"></i> Resumen de Temas</h3>
             <div id="topicsDistributionList" class="topic-tags-list">
               <p class="text-muted">Cargando temas analizados...</p>
             </div>
@@ -257,7 +434,7 @@
                 <span class="status-pill status-pill-success">Activo</span>
               </div>
               <p class="db-note">
-                Todos los datos se guardan tanto en servidor como en el cliente de cada usuario para máxima redundancia y respaldo.
+                Tus datos reales se almacenan con redundancia en el servidor y en el almacenamiento local del dispositivo.
               </p>
               <button id="btnDownloadBackupJson" class="btn btn-primary glow-btn btn-sm mt-3">
                 <i class="fa-solid fa-cloud-arrow-down"></i> Descargar Respaldo Completo (JSON)
@@ -327,6 +504,8 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="js/dbEngine.js"></script>
   <script src="js/admin.js"></script>
 </body>
 </html>

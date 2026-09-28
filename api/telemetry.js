@@ -51,6 +51,11 @@ module.exports = async function handler(req, res) {
     const city = req.headers['x-vercel-ip-city'] ? decodeURIComponent(req.headers['x-vercel-ip-city']) : (req.body && req.body.city) || 'Desconocida';
     const countryName = COUNTRY_MAP[countryCode] || (req.body && req.body.country) || (countryCode !== 'XX' ? countryCode : 'Desconocido');
 
+    const userAgent = req.headers['user-agent'] || (req.body && req.body.userAgent) || '';
+    const isBot = /bot|crawler|spider|lighthouse|headless|preview|curl|wget|pingdom|uptimerobot|python|postman|vercel-screenshot/i.test(userAgent) ||
+                  (req.headers['x-purpose'] === 'preview') ||
+                  (req.headers['sec-purpose'] === 'preview');
+
     if (action === 'visit') {
       const {
         sessionId,
@@ -71,7 +76,8 @@ module.exports = async function handler(req, res) {
         referrer,
         device,
         browser,
-        language
+        language,
+        isBot
       });
 
       return res.status(200).json({

@@ -118,6 +118,39 @@ module.exports = async function handler(req, res) {
       return res.status(200).json(fullData);
     }
 
+    if (action === 'sync_meetings') {
+      const { meetings } = req.body || {};
+      const result = await db.syncMeetings(meetings || []);
+      const stats = await db.getDashboardStats();
+      return res.status(200).json({
+        success: true,
+        message: `${result.inserted} reuniones nuevas sincronizadas`,
+        result,
+        stats
+      });
+    }
+
+    if (action === 'delete_meeting') {
+      const id = req.query.id || (req.body && req.body.id);
+      if (!id) {
+        return res.status(400).json({ error: 'ID de reunión requerido' });
+      }
+      const deleted = await db.deleteMeeting(id);
+      return res.status(200).json({ success: deleted });
+    }
+
+    if (action === 'clear_telemetry') {
+      const onlyBots = req.query.onlyBots === 'true' || (req.body && req.body.onlyBots === true);
+      const resData = await db.clearTelemetry(onlyBots);
+      const stats = await db.getDashboardStats();
+      return res.status(200).json({
+        success: true,
+        message: onlyBots ? 'Visitas de bots y pruebas filtradas' : 'Telemetría reiniciada correctamente',
+        ...resData,
+        stats
+      });
+    }
+
     return res.status(400).json({ error: `Acción '${action}' no reconocida` });
   } catch (err) {
     console.error('Admin API Error:', err);

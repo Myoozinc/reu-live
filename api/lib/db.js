@@ -131,6 +131,7 @@ class DatabaseEngine {
   async recordVisit(session) {
     const db = loadLocalDB();
     const existingIndex = db.telemetry.findIndex(s => s.sessionId === session.sessionId);
+    const isBot = Boolean(session.isBot);
 
     const record = {
       sessionId: session.sessionId || `sess_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
@@ -147,6 +148,7 @@ class DatabaseEngine {
       lastSeen: new Date().toISOString(),
       durationSeconds: session.durationSeconds || 0,
       isOnline: true,
+      isBot: isBot,
       meetingsCount: session.meetingsCount || 0
     };
 
@@ -156,17 +158,20 @@ class DatabaseEngine {
         ...db.telemetry[existingIndex],
         lastSeen: record.lastSeen,
         isOnline: true,
-        durationSeconds: Math.max(db.telemetry[existingIndex].durationSeconds || 0, record.durationSeconds)
+        durationSeconds: Math.max(db.telemetry[existingIndex].durationSeconds || 0, record.durationSeconds),
+        isBot: db.telemetry[existingIndex].isBot || isBot
       };
     } else {
-      // Add new session (keep up to 500 most recent)
+      // Add new session (keep up to 1000 most recent)
       db.telemetry.unshift(record);
-      if (db.telemetry.length > 500) db.telemetry = db.telemetry.slice(0, 500);
+      if (db.telemetry.length > 1000) db.telemetry = db.telemetry.slice(0, 1000);
 
-      // Update global stats
-      db.stats.totalVisits = (db.stats.totalVisits || 0) + 1;
-      const cc = record.countryCode || 'XX';
-      db.stats.countries[cc] = (db.stats.countries[cc] || 0) + 1;
+      // Only count non-bots in global visit stats
+      if (!isBot) {
+        db.stats.totalVisits = (db.stats.totalVisits || 0) + 1;
+        const cc = record.countryCode || 'XX';
+        db.stats.countries[cc] = (db.stats.countries[cc] || 0) + 1;
+      }
     }
 
     saveLocalDB();
@@ -228,22 +233,32 @@ class DatabaseEngine {
       durationFormatted: meeting.durationFormatted || '00:00',
       topic: meeting.topic || 'Coordinación General',
       sentiment: meeting.sentiment || 'Neutral',
+      intensity: meeting.intensity || 'Media / Productiva',
+      tone: meeting.tone || 'Coordinación General',
       interventionsCount: meeting.interventionsCount || (meeting.transcript ? meeting.transcript.length : 0),
+      metrics: meeting.metrics || null,
       transcript: meeting.transcript || [],
       agreements: meeting.agreements || [],
+      detailedAgreements: meeting.detailedAgreements || [],
       actionItems: meeting.actionItems || [],
+      detailedActionItems: meeting.detailedActionItems || [],
       country: meeting.country || 'Desconocido',
       countryCode: meeting.countryCode || 'XX',
       hasVideo: Boolean(meeting.hasVideo)
     };
 
-    // Store in DB (keep last 300 meetings)
-    db.meetings.unshift(record);
-    if (db.meetings.length > 300) db.meetings = db.meetings.slice(0, 300);
+    // Check if meeting already exists (update instead of duplicate)
+    const existingIndex = db.meetings.findIndex(m => m.id === record.id);
+    if (existingIndex >= 0) {
+      db.meetings[existingIndex] = record;
+    } else {
+      db.meetings.unshift(record);
+      if (db.meetings.length > 500) db.meetings = db.meetings.slice(0, 500);
 
-    // Update stats
-    db.stats.totalMeetings = (db.stats.totalMeetings || 0) + 1;
-    db.stats.totalMeetingSeconds = (db.stats.totalMeetingSeconds || 0) + record.durationSeconds;
+      // Update stats
+      db.stats.totalMeetings = db.meetings.length;
+      db.stats.totalMeetingSeconds = db.meetings.reduce((acc, m) => acc + (m.durationSeconds || 0), 0);
+    }
 
     // Increment meetingsCount in session
     if (record.sessionId) {
@@ -261,11 +276,90 @@ class DatabaseEngine {
   }
 
   /**
-   * Get all visitor sessions
+   * Delete meeting by ID
    */
-  async getSessions(limit = 100) {
+  async deleteMeeting(id) {
     const db = loadLocalDB();
-    // Mark sessions older than 2 minutes without heartbeat as offline
+    const idx = db.meetings.findIndex(m => m.id === id);
+    if (idx >= 0) {
+      db.meetings.splice(idx, 1);
+      db.stats.totalMeetings = db.meetings.length;
+      db.stats.totalMeetingSeconds = db.meetings.reduce((acc, m) => acc + (m.durationSeconds || 0), 0);
+      saveLocalDB();
+      if (this.hasCloudKV()) {
+        executeKV('HDEL', ['reulive:meetings', id]).catch(() => {});
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Batch sync meetings from client (e.g. IndexedDB)
+   */
+  async syncMeetings(meetingsList) {
+    if (!Array.isArray(meetingsList) || meetingsList.length === 0) return { inserted: 0, total: 0 };
+    const db = loadLocalDB();
+    let inserted = 0;
+
+    for (const m of meetingsList) {
+      if (!m || !m.id) continue;
+      const existsIndex = db.meetings.findIndex(existing => existing.id === m.id);
+      if (existsIndex === -1) {
+        db.meetings.push(m);
+        inserted++;
+      } else {
+        // Update if existing record has less info
+        db.meetings[existsIndex] = { ...db.meetings[existsIndex], ...m };
+      }
+    }
+
+    if (inserted > 0) {
+      // Sort newest first
+      db.meetings.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      db.stats.totalMeetings = db.meetings.length;
+      db.stats.totalMeetingSeconds = db.meetings.reduce((acc, m) => acc + (m.durationSeconds || 0), 0);
+      saveLocalDB();
+
+      if (this.hasCloudKV()) {
+        for (const m of meetingsList) {
+          executeKV('HSET', ['reulive:meetings', m.id, JSON.stringify(m)]).catch(() => {});
+        }
+      }
+    }
+
+    return { inserted, total: db.meetings.length };
+  }
+
+  /**
+   * Clear telemetry (removes bots/test or all visits)
+   */
+  async clearTelemetry(onlyBots = false) {
+    const db = loadLocalDB();
+    if (onlyBots) {
+      db.telemetry = db.telemetry.filter(s => !s.isBot && s.country !== 'Desconocido' && s.ip !== '127.0.0.1');
+    } else {
+      db.telemetry = [];
+    }
+    db.stats.totalVisits = db.telemetry.length;
+    db.stats.countries = {};
+    db.telemetry.forEach(s => {
+      const cc = s.countryCode || 'XX';
+      db.stats.countries[cc] = (db.stats.countries[cc] || 0) + 1;
+    });
+    saveLocalDB();
+
+    if (this.hasCloudKV() && !onlyBots) {
+      executeKV('DEL', ['reulive:telemetry']).catch(() => {});
+    }
+    return { remaining: db.telemetry.length };
+  }
+
+  /**
+   * Get all visitor sessions (optionally filtering bots)
+   */
+  async getSessions(limit = 100, includeBots = false) {
+    const db = loadLocalDB();
     const now = Date.now();
     db.telemetry.forEach(s => {
       const last = new Date(s.lastSeen).getTime();
@@ -274,7 +368,8 @@ class DatabaseEngine {
       }
     });
 
-    return db.telemetry.slice(0, limit);
+    const filtered = includeBots ? db.telemetry : db.telemetry.filter(s => !s.isBot);
+    return filtered.slice(0, limit);
   }
 
   /**
@@ -294,43 +389,129 @@ class DatabaseEngine {
   }
 
   /**
-   * Get comprehensive dashboard metrics
+   * Get comprehensive 100% REAL dashboard metrics
    */
   async getDashboardStats() {
     const db = loadLocalDB();
-    const sessions = db.telemetry;
+    // Strictly real user sessions (exclude bots / crawlers)
+    const sessions = db.telemetry.filter(s => !s.isBot);
     const meetings = db.meetings;
 
     const totalVisits = sessions.length;
     const activeNow = sessions.filter(s => s.isOnline).length;
     const totalMeetings = meetings.length;
 
-    // Calculate total duration in app
+    // Total duration in app
     const totalAppSeconds = sessions.reduce((acc, s) => acc + (s.durationSeconds || 0), 0);
     const avgDurationSeconds = totalVisits > 0 ? Math.round(totalAppSeconds / totalVisits) : 0;
 
-    // Countries breakdown
+    // Total meeting seconds
+    const totalMeetingSeconds = meetings.reduce((acc, m) => acc + (m.durationSeconds || 0), 0);
+    const avgMeetingDurationSeconds = totalMeetings > 0 ? Math.round(totalMeetingSeconds / totalMeetings) : 0;
+
+    // Total interventions & words
+    let totalInterventions = 0;
+    let speakerTurns = { user: 0, interlocutor: 0 };
+    meetings.forEach(m => {
+      const count = m.interventionsCount || (m.transcript ? m.transcript.length : 0);
+      totalInterventions += count;
+      (m.transcript || []).forEach(t => {
+        if (t.speakerType === 'user' || t.speaker === 'Tú') {
+          speakerTurns.user++;
+        } else {
+          speakerTurns.interlocutor++;
+        }
+      });
+    });
+    const avgInterventions = totalMeetings > 0 ? Math.round(totalInterventions / totalMeetings) : 0;
+
+    // Countries breakdown (from real users)
     const countryCounts = {};
     sessions.forEach(s => {
       const c = s.country || 'Desconocido';
       countryCounts[c] = (countryCounts[c] || 0) + 1;
     });
 
-    // Topics breakdown
+    // Topics breakdown (from real meetings)
     const topicCounts = {};
     meetings.forEach(m => {
       const t = m.topic || 'General';
       topicCounts[t] = (topicCounts[t] || 0) + 1;
     });
 
+    // Sentiment breakdown (from real meetings)
+    const sentimentCounts = {};
+    meetings.forEach(m => {
+      const s = m.sentiment || 'Neutral';
+      sentimentCounts[s] = (sentimentCounts[s] || 0) + 1;
+    });
+
+    // Devices breakdown (from real sessions)
+    const deviceCounts = {};
+    sessions.forEach(s => {
+      const d = s.device || 'Escritorio';
+      deviceCounts[d] = (deviceCounts[d] || 0) + 1;
+    });
+
+    // Browsers breakdown (from real sessions)
+    const browserCounts = {};
+    sessions.forEach(s => {
+      const b = s.browser || 'Navegador Web';
+      browserCounts[b] = (browserCounts[b] || 0) + 1;
+    });
+
+    // Meeting Duration distribution buckets
+    const durationBuckets = {
+      '< 1 min': 0,
+      '1 - 5 min': 0,
+      '5 - 15 min': 0,
+      '15 - 30 min': 0,
+      '> 30 min': 0
+    };
+    meetings.forEach(m => {
+      const secs = m.durationSeconds || 0;
+      if (secs < 60) durationBuckets['< 1 min']++;
+      else if (secs < 300) durationBuckets['1 - 5 min']++;
+      else if (secs < 900) durationBuckets['5 - 15 min']++;
+      else if (secs < 1800) durationBuckets['15 - 30 min']++;
+      else durationBuckets['> 30 min']++;
+    });
+
+    // Timeline breakdown (by date YYYY-MM-DD for visual charts)
+    const timelineMap = {};
+    sessions.forEach(s => {
+      const date = new Date(s.firstSeen).toISOString().slice(0, 10);
+      if (!timelineMap[date]) timelineMap[date] = { date, visits: 0, meetings: 0 };
+      timelineMap[date].visits++;
+    });
+    meetings.forEach(m => {
+      const date = new Date(m.timestamp).toISOString().slice(0, 10);
+      if (!timelineMap[date]) timelineMap[date] = { date, visits: 0, meetings: 0 };
+      timelineMap[date].meetings++;
+    });
+
+    const timeline = Object.values(timelineMap).sort((a, b) => a.date.localeCompare(b.date));
+
     return {
       totalVisits,
       activeNow,
       totalMeetings,
+      totalMeetingSeconds,
+      totalMeetingMinutes: Math.round(totalMeetingSeconds / 60),
       avgDurationSeconds,
       avgDurationFormatted: this.formatSeconds(avgDurationSeconds),
+      avgMeetingDurationSeconds,
+      avgMeetingDurationFormatted: this.formatSeconds(avgMeetingDurationSeconds),
+      totalInterventions,
+      avgInterventions,
       countryCounts,
       topicCounts,
+      sentimentCounts,
+      deviceCounts,
+      browserCounts,
+      durationBuckets,
+      speakerTurns,
+      timeline,
       storageType: this.hasCloudKV() ? 'Vercel KV / Upstash (Nube)' : 'Almacenamiento Local Resiliente'
     };
   }
@@ -341,11 +522,11 @@ class DatabaseEngine {
   async exportFullDatabase() {
     const db = loadLocalDB();
     return {
-      version: '1.0.0',
+      version: '1.1.0',
       exportedAt: new Date().toISOString(),
       storageType: this.hasCloudKV() ? 'KV_Cloud' : 'Local_JSON',
       stats: await this.getDashboardStats(),
-      telemetry: db.telemetry,
+      telemetry: db.telemetry.filter(s => !s.isBot),
       meetings: db.meetings
     };
   }

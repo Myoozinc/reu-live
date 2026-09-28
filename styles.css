@@ -1766,7 +1766,7 @@ details.panel-details summary:hover {
 /* KPI Stat Cards Grid */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 16px;
   margin-bottom: 28px;
 }
@@ -1814,6 +1814,7 @@ details.panel-details summary:hover {
   gap: 8px;
   border-bottom: 1px solid var(--border-subtle);
   margin-bottom: 20px;
+  overflow-x: auto;
 }
 
 .nav-tab-btn {
@@ -1828,6 +1829,7 @@ details.panel-details summary:hover {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
   transition: var(--trans-smooth);
 }
 
@@ -1836,8 +1838,8 @@ details.panel-details summary:hover {
 }
 
 .nav-tab-btn.active {
-  color: var(--accent-sage);
-  border-bottom-color: var(--accent-sage);
+  color: var(--brand-blue);
+  border-bottom-color: var(--brand-blue);
 }
 
 .tab-pane {
@@ -1847,6 +1849,91 @@ details.panel-details summary:hover {
 .tab-pane.active {
   display: block;
   animation: fadeIn 0.25s ease-out;
+}
+
+/* ==========================================
+   VISUAL CHARTS DASHBOARD (CHART.JS)
+   ========================================== */
+.charts-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  width: 100%;
+}
+
+.chart-card {
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  min-height: 330px;
+  border-radius: var(--radius-lg);
+  position: relative;
+  transition: var(--trans-smooth);
+}
+
+.chart-card:hover {
+  border-color: var(--brand-blue-border);
+  box-shadow: var(--card-shadow-hover);
+}
+
+.chart-card-wide {
+  grid-column: 1 / -1;
+  min-height: 370px;
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 18px;
+  gap: 12px;
+}
+
+.chart-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.chart-title i {
+  font-size: 1.25rem;
+}
+
+.chart-title h4 {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.chart-sub {
+  font-size: 0.76rem;
+  color: var(--text-dim);
+  margin: 3px 0 0;
+}
+
+.chart-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-blue-subtle);
+  color: var(--brand-blue);
+  border: 1px solid var(--brand-blue-border);
+  white-space: nowrap;
+}
+
+.chart-canvas-wrapper {
+  position: relative;
+  width: 100%;
+  flex: 1;
+  min-height: 220px;
+}
+
+.table-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* Tables in Admin */
@@ -2331,6 +2418,18 @@ details.panel-details summary:hover {
 
   .action-card {
     padding: 10px 12px;
+  }
+
+  .charts-dashboard-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .chart-card {
+    padding: 16px;
+    min-height: 280px;
+  }
+  .chart-card-wide {
+    min-height: 300px;
   }
 }
 
