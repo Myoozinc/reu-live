@@ -17,6 +17,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let isVoiceChatting = false;
   let voiceChatRecognition = null;
   let copilotUpdateDebounce = null;
+  let lastCopilotRequestAt = 0;
+  const COPILOT_MIN_INTERVAL_MS = 6000;
 
   // ===== DOM Elements =====
   // Header
@@ -176,21 +178,39 @@ document.addEventListener('DOMContentLoaded', () => {
       copilotSubtitle.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-cyan"></i> Actualizando sugerencias con IA...';
     }
 
+    const quote = (t) => (t ? `"${String(t).replace(/^"|"$/g, '')}"` : '—');
+    let copilotData = null;
     try {
-      const copilotData = await aiEngine.fetchLiveCopilot(sttEngine.transcriptHistory);
-      if (copilotData) {
-        if (copilotLiveSummary) copilotLiveSummary.textContent = copilotData.summary;
-        if (liveDirectText) liveDirectText.textContent = `"${copilotData.direct_response.replace(/^"|"$/g, '')}"`;
-        if (liveProposalText) liveProposalText.textContent = `"${copilotData.proposal.replace(/^"|"$/g, '')}"`;
-        if (liveQuestionText) liveQuestionText.textContent = `"${copilotData.question.replace(/^"|"$/g, '')}"`;
-        if (currentTopicText && copilotData.topic) currentTopicText.textContent = copilotData.topic;
-        if (analyticsCurrentTopic && copilotData.topic) analyticsCurrentTopic.textContent = copilotData.topic;
+      copilotData = await aiEngine.fetchLiveCopilot(sttEngine.transcriptHistory);
+      // null = a newer request superseded this one: leave the HUD to that request
+      if (!copilotData) return;
+
+      copilotLiveSummary.textContent = copilotData.summary;
+      if (liveDirectText) liveDirectText.textContent = quote(copilotData.direct_response);
+      if (liveProposalText) liveProposalText.textContent = quote(copilotData.proposal);
+      if (liveQuestionText) liveQuestionText.textContent = quote(copilotData.question);
+      if (currentTopicText && copilotData.topic) currentTopicText.textContent = copilotData.topic;
+      if (analyticsCurrentTopic && copilotData.topic) analyticsCurrentTopic.textContent = copilotData.topic;
+
+      // The AI also detects agreements, tasks and sentiment: refresh those panels
+      if (copilotData.source === 'ai' && sttEngine.transcriptHistory.length > 0) {
+        const aiMeta = aiEngine.processTranscript(sttEngine.transcriptHistory);
+        if (aiMeta) updateMetaUI(aiMeta);
       }
     } catch (e) {
       console.warn('Error updating live copilot HUD:', e);
     } finally {
-      if (copilotSubtitle) {
-        copilotSubtitle.textContent = 'Conectado a toda la transcripción en vivo';
+      if (copilotSubtitle && copilotData) {
+        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        if (copilotData.source === 'ai') {
+          copilotSubtitle.innerHTML = `<i class="fa-solid fa-circle text-emerald" style="font-size:0.55em;vertical-align:middle"></i> IA en vivo · actualizado ${time}`;
+          copilotSubtitle.title = copilotData.provider || '';
+        } else if (sttEngine.transcriptHistory.length > 0) {
+          copilotSubtitle.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-amber"></i> Modo básico sin IA (revisa GROQ_API_KEY o el límite gratuito)';
+          copilotSubtitle.title = '';
+        } else {
+          copilotSubtitle.textContent = 'Esperando conversación...';
+        }
       }
     }
   };
@@ -232,9 +252,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Debounce Live Copilot HUD update so it doesn't flood API on every single phrase
     if (copilotUpdateDebounce) clearTimeout(copilotUpdateDebounce);
+    // Faster when the other person just finished talking (that's when you need an answer)
+    // and never more than one call every ~6 s (keeps within Groq's free per-minute limits)
+    const baseDelay = chunk.speakerType === 'interlocutor' ? 1500 : 4000;
+    const sinceLast = Date.now() - lastCopilotRequestAt;
     copilotUpdateDebounce = setTimeout(() => {
+      lastCopilotRequestAt = Date.now();
       updateLiveCopilotHUD();
-    }, 4000);
+    }, Math.max(baseDelay, COPILOT_MIN_INTERVAL_MS - sinceLast));
   };
 
   sttEngine.onStatusChange = (status) => {
@@ -439,6 +464,22 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       sourceLabel.textContent = `Fuente: ${result.sourceLabel || 'Micrófono'}`;
+
+      // Guía de captura: sin audio del sistema la IA solo oye el micrófono
+      if (transcriptStream) {
+        let tip = '';
+        if (result.sharedScreenWithoutAudio) {
+          tip = '<i class="fa-solid fa-triangle-exclamation text-amber"></i> Compartiste pantalla <b>sin audio</b>: no se oirá a los demás. Detén y vuelve a compartir marcando <b>"Compartir audio"</b> (en Chrome, comparte la <b>pestaña</b> de Zoom/Meet/WhatsApp Web o, en Windows, la <b>pantalla completa</b>).';
+        } else if (!mediaEngine.displayStream) {
+          tip = '<i class="fa-solid fa-circle-info text-cyan"></i> Modo solo micrófono: pon la llamada en <b>altavoz</b> e indica quién habla con los botones <b>Tú / Interlocutor</b>.';
+        } else {
+          tip = '<i class="fa-solid fa-headphones text-cyan"></i> Audio del sistema conectado. Usa <b>auriculares</b> para que tu micrófono no capte también al interlocutor.';
+        }
+        const tipEl = document.createElement('div');
+        tipEl.className = 'stream-item system-msg';
+        tipEl.innerHTML = `<span class="time">00:00</span><span class="text">${tip}</span>`;
+        transcriptStream.appendChild(tipEl);
+      }
 
       // Start recording
       mediaEngine.startRecording();

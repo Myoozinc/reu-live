@@ -17,6 +17,37 @@ class AIEngine {
     this.lastInsightChunkCount = 0;
     this.insightInterval = 5;
     this.detailedMetrics = null;
+    this.resetAiState();
+  }
+
+  resetAiState() {
+    // Lo que entiende la IA real (tiene prioridad sobre las heurísticas locales)
+    this.aiTopic = null;
+    this.aiSummary = '';
+    this.aiSentiment = null;
+    this.aiAgreements = null;
+    this.aiActionItems = null;
+    this.copilotSeq = 0;
+    if (this.copilotAbort) this.copilotAbort.abort();
+    this.copilotAbort = null;
+  }
+
+  /**
+   * Whole-word keyword test (accepts plural): "ya" must not match "playa",
+   * "api" must not match "capital".
+   */
+  hasWord(text, keyword) {
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(^|[^\\p{L}])${escaped}(s|es)?(?=$|[^\\p{L}])`, 'iu').test(text);
+  }
+
+  /** Memory sent to the backend so long meetings keep context beyond the last lines. */
+  getMemory() {
+    return {
+      summary: this.aiSummary || '',
+      agreements: (this.aiAgreements || []).map(a => a.title || a),
+      actionItems: (this.aiActionItems || []).map(a => a.title || a)
+    };
   }
 
   reset() {
@@ -31,6 +62,7 @@ class AIEngine {
     this.topicHistory = [];
     this.lastInsightChunkCount = 0;
     this.detailedMetrics = null;
+    this.resetAiState();
     console.log('[AIEngine] Estado de IA y analítica reiniciados limpiamente.');
   }
 
@@ -45,8 +77,8 @@ class AIEngine {
     const recentText = recent.map(t => `${t.speaker}: ${t.text}`).join('\n');
     const fullText = transcriptHistory.map(t => t.text).join(' ');
 
-    // Extract topic
-    const newTopic = this.extractTopic(recentText, fullText);
+    // Extract topic (the AI topic, when available, is far better than keywords)
+    const newTopic = this.aiTopic || this.extractTopic(recentText, fullText);
     if (newTopic !== this.currentTopic) {
       this.topicHistory.push({
         topic: newTopic,
@@ -55,7 +87,7 @@ class AIEngine {
       this.currentTopic = newTopic;
     }
 
-    this.sentiment = this.analyzeSentiment(recentText);
+    this.sentiment = this.aiSentiment || this.analyzeSentiment(recentText);
     this.analyzeIntensityAndTone(transcriptHistory);
     this.extractItems(transcriptHistory);
     const metrics = this.calculateDetailedMetrics(transcriptHistory);
@@ -82,37 +114,122 @@ class AIEngine {
       return this.getLocalCopilotFallback(transcriptHistory);
     }
 
+    // Only the latest request matters: cancel the previous one so a slow, stale
+    // answer never overwrites a newer suggestion.
+    if (this.copilotAbort) this.copilotAbort.abort();
+    const controller = new AbortController();
+    this.copilotAbort = controller;
+    const seq = ++this.copilotSeq;
+
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           mode: 'copilot',
           transcript: transcriptHistory,
-          topic: this.currentTopic
+          topic: this.currentTopic,
+          memory: this.getMemory()
         })
       });
 
+      if (seq !== this.copilotSeq) return null;
+
       if (res.ok) {
         const data = await res.json();
+        if (seq !== this.copilotSeq) return null;
         if (data && data.copilot) {
           const c = data.copilot;
-          if (c.topic) this.currentTopic = c.topic;
+          this.applyAiUnderstanding(c);
           return {
-            topic: c.topic || this.currentTopic,
+            topic: this.currentTopic,
             summary: c.summary || 'Conversación en curso',
-            direct_response: c.direct_response || 'De acuerdo, podemos profundizar en ese punto.',
-            proposal: c.proposal || 'Propongo definir los siguientes pasos concretos.',
-            question: c.question || '¿Qué otros aspectos consideran prioritarios?',
-            source: data.provider || 'ai'
+            direct_response: c.direct_response || '',
+            proposal: c.proposal || '',
+            question: c.question || '',
+            source: 'ai',
+            provider: data.provider || 'ai'
           };
         }
       }
     } catch (err) {
+      if (err.name === 'AbortError') return null;
       console.warn('Live copilot backend request error, using local generator:', err);
     }
 
+    if (seq !== this.copilotSeq) return null;
     return this.getLocalCopilotFallback(transcriptHistory);
+  }
+
+  /** Store what the AI understood (topic, summary, agreements, tasks, sentiment). */
+  applyAiUnderstanding(c) {
+    const clean = (v) => (typeof v === 'string' ? v.trim() : '');
+    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const topic = clean(c.topic);
+    if (topic) {
+      if (topic !== this.currentTopic) this.topicHistory.push({ topic, time: now });
+      this.aiTopic = topic;
+      this.currentTopic = topic;
+    }
+    if (clean(c.summary)) this.aiSummary = clean(c.summary);
+
+    const sentimentMap = { positivo: 'Positivo / Colaborativo', tenso: 'Atención Requerida', neutral: 'Analítico / Técnico' };
+    const sentimentKey = clean(c.sentiment).toLowerCase();
+    if (sentimentMap[sentimentKey]) {
+      this.aiSentiment = sentimentMap[sentimentKey];
+      this.sentiment = this.aiSentiment;
+    }
+
+    if (Array.isArray(c.agreements)) {
+      this.aiAgreements = c.agreements
+        .map(a => clean(typeof a === 'string' ? a : (a && (a.text || a.title))))
+        .filter(Boolean)
+        .slice(-10)
+        .map((title, i) => ({
+          id: `agr_ai_${i}`,
+          title,
+          speaker: 'IA',
+          timestamp: now,
+          priority: 'Estratégica',
+          context: title,
+          status: 'Compromiso en firme'
+        }));
+    }
+
+    if (Array.isArray(c.action_items)) {
+      this.aiActionItems = c.action_items
+        .map(a => (typeof a === 'string' ? { task: a } : a || {}))
+        .filter(a => clean(a.task))
+        .slice(-10)
+        .map((a, i) => {
+          const owner = clean(a.owner);
+          const due = clean(a.due);
+          return {
+            id: `act_ai_${i}`,
+            title: clean(a.task) + (due ? ` (${due})` : ''),
+            speaker: owner || 'Sin asignar',
+            timestamp: now,
+            priority: /urgente|hoy|ya|inmediat/i.test(due) ? 'Alta / Crítica' : 'Media / Operativa',
+            context: clean(a.task),
+            status: 'Pendiente de ejecución'
+          };
+        });
+    }
+    this.applyAiItems();
+  }
+
+  /** AI-detected agreements/tasks replace the keyword-based ones when available. */
+  applyAiItems() {
+    if (this.aiAgreements) {
+      this.detailedAgreements = this.aiAgreements;
+      this.agreements = this.aiAgreements.map(a => a.title);
+    }
+    if (this.aiActionItems) {
+      this.detailedActionItems = this.aiActionItems;
+      this.actionItems = this.aiActionItems.map(a => (a.speaker && a.speaker !== 'Sin asignar' ? `${a.speaker}: ${a.title}` : a.title));
+    }
   }
 
   getLocalCopilotFallback(history) {
@@ -146,7 +263,8 @@ class AIEngine {
       direct_response: directResponse,
       proposal: proposal,
       question: question,
-      source: 'local'
+      source: 'local',
+      provider: 'local'
     };
   }
 
@@ -207,7 +325,8 @@ class AIEngine {
         body: JSON.stringify({
           userMessage,
           transcript: transcriptHistory,
-          topic: this.currentTopic
+          topic: this.currentTopic,
+          memory: this.getMemory()
         })
       });
 
@@ -457,8 +576,8 @@ class AIEngine {
     const positive = ['excelente', 'perfecto', 'acuerdo', 'bien', 'genial', 'aprobado'];
     const negative = ['problema', 'urgente', 'error', 'fallo', 'retraso', 'bloqueado'];
 
-    const posCount = positive.filter(w => lower.includes(w)).length;
-    const negCount = negative.filter(w => lower.includes(w)).length;
+    const posCount = positive.filter(w => this.hasWord(lower, w)).length;
+    const negCount = negative.filter(w => this.hasWord(lower, w)).length;
 
     if (posCount > negCount && posCount > 0) return 'Positivo / Colaborativo';
     if (negCount > posCount && negCount > 0) return 'Atención Requerida';
@@ -476,15 +595,15 @@ class AIEngine {
 
     history.forEach((item, index) => {
       const lower = item.text.toLowerCase();
-      const isAgreement = agreementKw.some(k => lower.includes(k));
-      const isAction = actionKw.some(k => lower.includes(k));
+      const isAgreement = agreementKw.some(k => this.hasWord(lower, k));
+      const isAction = actionKw.some(k => this.hasWord(lower, k));
 
       if (isAgreement) {
         const textSummary = `${item.speaker}: ${item.text}`;
         newAgreements.push(textSummary);
 
         let priority = 'Estratégica';
-        if (lower.includes('inmediato') || lower.includes('hoy') || lower.includes('ya') || lower.includes('urgente')) {
+        if (['inmediato', 'hoy', 'ya', 'urgente'].some(k => this.hasWord(lower, k))) {
           priority = 'Alta / Inmediata';
         } else if (lower.includes('semana') || lower.includes('luego') || lower.includes('próximo')) {
           priority = 'Media / Operativa';
@@ -526,6 +645,7 @@ class AIEngine {
     this.detailedAgreements = newDetailedAgreements.slice(-10);
     this.actionItems = newActionItems.slice(-10);
     this.detailedActionItems = newDetailedActionItems.slice(-10);
+    this.applyAiItems();
   }
 
   /**
@@ -604,7 +724,7 @@ class AIEngine {
     ];
 
     const fullTextLower = history.map(t => t.text).join(' ').toLowerCase();
-    const termsFound = technicalVocabulary.filter(term => fullTextLower.includes(term));
+    const termsFound = technicalVocabulary.filter(term => this.hasWord(fullTextLower, term));
     const termCount = termsFound.length;
 
     let technicalDepth = 'General / Estratégica';
@@ -662,8 +782,8 @@ class AIEngine {
     const urgentWords = ['urgente', 'problema', 'error', 'fallo', 'crítico', 'bloqueado', 'imposible', 'retraso', 'riesgo', 'cuidado', 'grave', 'preocupa', 'cancelar', 'tensión'];
     const calmWords = ['excelente', 'perfecto', 'tranquilo', 'de acuerdo', 'bien', 'claro', 'gracias', 'avance', 'éxito'];
 
-    const urgentCount = urgentWords.filter(w => recentText.includes(w)).length;
-    const calmCount = calmWords.filter(w => recentText.includes(w)).length;
+    const urgentCount = urgentWords.filter(w => this.hasWord(recentText, w)).length;
+    const calmCount = calmWords.filter(w => this.hasWord(recentText, w)).length;
 
     const exclamations = (recentText.match(/[!¡]/g) || []).length;
     const questions = (recentText.match(/[?¿]/g) || []).length;
@@ -691,7 +811,7 @@ class AIEngine {
     let detectedTone = 'Coordinación General';
     let maxMatches = 0;
     for (const cluster of toneClusters) {
-      const matches = cluster.keys.filter(k => fullText.includes(k)).length;
+      const matches = cluster.keys.filter(k => this.hasWord(fullText, k)).length;
       if (matches > maxMatches) {
         maxMatches = matches;
         detectedTone = cluster.name;

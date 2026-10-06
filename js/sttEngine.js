@@ -97,7 +97,8 @@ class STTEngine {
    * Automatically falls back to browser Web Speech API if /api/transcribe fails or 503.
    */
   async handleAudioChunk({ blob, speakerType }) {
-    this.audioQueue.push({ blob, speakerType });
+    // null = solo micrófono: se fija quién hablaba según el selector en el momento de grabar
+    this.audioQueue.push({ blob, speakerType: speakerType || this.activeSpeaker });
     if (!this.isProcessingQueue) {
       this.processAudioQueue();
     }
@@ -123,7 +124,10 @@ class STTEngine {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           audioBase64: base64,
-          mimeType: item.blob.type || 'audio/webm'
+          mimeType: item.blob.type || 'audio/webm',
+          language: (this.language || 'es').slice(0, 2),
+          // Contexto para Whisper: lo último transcrito (mejora nombres y frases cortadas)
+          prompt: this.transcriptHistory.slice(-3).map(t => t.text).join(' ').slice(-400)
         })
       });
 
@@ -143,7 +147,14 @@ class STTEngine {
           }
 
           const now = Date.now();
-          const speakerType = item.speakerType || 'interlocutor';
+          // null = solo micrófono: quién habla lo indica el selector Tú / Interlocutor
+          const speakerType = item.speakerType || this.activeSpeaker || 'interlocutor';
+
+          // Sin auriculares el micrófono repite lo que dijo el interlocutor: descartar el eco
+          if (speakerType === 'user' && this.isEchoOfInterlocutor(text, now)) {
+            setTimeout(() => this.processAudioQueue(), 50);
+            return;
+          }
           this.detectAndApplySpeakerNames(text, speakerType);
           const speakerName = this.speakers[speakerType] || (speakerType === 'user' ? 'Tú' : 'Interlocutor');
 
@@ -181,6 +192,24 @@ class STTEngine {
 
     // Process next queued chunk
     setTimeout(() => this.processAudioQueue(), 100);
+  }
+
+  /**
+   * True if `text` (from the mic) mostly repeats what the interlocutor said in the
+   * last ~20 s: the mic picked up the speakers instead of the user's own voice.
+   */
+  isEchoOfInterlocutor(text, now) {
+    const words = (str) => new Set((str.toLowerCase().match(/[a-záéíóúñü0-9]+/g) || []).filter(w => w.length > 2));
+    const mine = words(text);
+    if (mine.size < 3) return false;
+    return this.transcriptHistory
+      .filter(t => t.speakerType === 'interlocutor' && now - (t.id || 0) < 20000)
+      .some(t => {
+        const theirs = words(t.text);
+        let shared = 0;
+        mine.forEach(w => { if (theirs.has(w)) shared++; });
+        return shared / mine.size >= 0.6;
+      });
   }
 
   blobToBase64(blob) {
