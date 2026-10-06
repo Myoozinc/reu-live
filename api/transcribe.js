@@ -3,7 +3,12 @@
 // Esto reemplaza a la Web Speech API del navegador, que SOLO puede escuchar
 // el micrófono. Con esto sí se transcribe el audio real grabado (sistema + mic).
 //
+// Si se pide `translateTo` y la persona habla otro idioma, devuelve también la traducción
+// (una sola petición desde el navegador: menos espera).
+//
 // Variable de entorno necesaria: GROQ_API_KEY -> https://console.groq.com/keys
+
+import { languageCode, translateText, LANGUAGES } from './_lib/llm.js';
 
 export const config = {
   api: { bodyParser: { sizeLimit: '15mb' } }
@@ -43,7 +48,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { audioBase64, mimeType, prompt, language } = req.body || {};
+    const { audioBase64, mimeType, prompt, language, translateTo } = req.body || {};
     if (!audioBase64) {
       res.status(400).json({ error: 'audioBase64 requerido' });
       return;
@@ -51,7 +56,9 @@ export default async function handler(req, res) {
 
     const audioBuffer = Buffer.from(audioBase64, 'base64');
     const ext = (mimeType || '').includes('mp4') ? 'mp4' : 'webm';
-    const lang = typeof language === 'string' && /^[a-z]{2}$/.test(language) ? language : 'es';
+    // 'auto' (o vacío) = Whisper detecta el idioma de cada fragmento
+    const lang = typeof language === 'string' && /^[a-z]{2}$/.test(language) ? language : null;
+    const target = LANGUAGES[translateTo] ? translateTo : null;
     // El final de lo ya transcrito da continuidad: nombres, términos y frases cortadas.
     const contextPrompt = typeof prompt === 'string' ? prompt.slice(-400) : '';
 
@@ -60,7 +67,7 @@ export default async function handler(req, res) {
       const form = new FormData();
       form.append('file', new Blob([audioBuffer], { type: mimeType || 'audio/webm' }), `chunk.${ext}`);
       form.append('model', model);
-      form.append('language', lang);
+      if (lang) form.append('language', lang);
       form.append('temperature', '0');
       form.append('response_format', 'verbose_json');
       if (contextPrompt) form.append('prompt', contextPrompt);
@@ -95,7 +102,13 @@ export default async function handler(req, res) {
       text = text.replace(/\s+/g, ' ').trim();
       if (isHallucination(text)) text = '';
 
-      res.status(200).json({ text, model });
+      const detected = languageCode(data.language) || lang || '';
+      let translation = null;
+      if (text && target && detected && detected !== target) {
+        translation = await translateText(text, target, detected).catch(() => null);
+      }
+
+      res.status(200).json({ text, language: detected, translation, model });
       return;
     }
 

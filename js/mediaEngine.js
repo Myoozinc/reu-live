@@ -292,17 +292,17 @@ class MediaEngine {
     this.recordedChunks = [];
     this.audioChunks = [];
 
-    // Video+Audio recorder
+    // Video+Audio recorder: MP4 first (normal video file that opens in any player;
+    // Chrome/Edge 126+ and Safari), WebM only where MP4 isn't available (Firefox).
     let options = {};
-    if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
-      options = { mimeType: 'video/webm;codecs=vp9,opus' };
-    } else if (MediaRecorder.isTypeSupported('video/webm')) {
-      options = { mimeType: 'video/webm' };
-    } else if (MediaRecorder.isTypeSupported('video/mp4')) {
-      options = { mimeType: 'video/mp4' };
-    } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-      options = { mimeType: 'audio/webm' };
-    }
+    const hasVideoTrack = stream.getVideoTracks().length > 0;
+    const candidates = hasVideoTrack
+      ? ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4;codecs=avc1,opus', 'video/mp4',
+         'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+      : ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'];
+    const supported = candidates.find(t => MediaRecorder.isTypeSupported(t));
+    if (supported) options = { mimeType: supported };
+    this.recordingHasVideo = hasVideoTrack;
 
     try {
       this.mediaRecorder = new MediaRecorder(stream, options);
@@ -492,10 +492,10 @@ class MediaEngine {
   }
 
   /**
-   * Stop recording and auto-download video + WAV files
+   * Stop recording and return the files (the app saves them together in one folder):
+   * { video: { blob, ext } | null, audio: { blob, ext } | null }
    */
   async stopAndExport() {
-    const dateStr = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
     const results = { video: null, audio: null };
 
     // Stop video recorder
@@ -528,20 +528,21 @@ class MediaEngine {
 
     this.isRecording = false;
 
-    // Auto-download video
-    if (results.video && results.video.blob.size > 0) {
-      this.downloadBlob(results.video.blob, `ReuLive-Video-${dateStr}.${results.video.ext}`);
+    // Audio-only sessions (mic without camera) don't produce a "video" file
+    if (results.video && (!this.recordingHasVideo || results.video.blob.size === 0)) {
+      results.video = null;
     }
 
-    // Convert audio to WAV and download
+    // Convert audio to WAV
     if (results.audio && results.audio.size > 0) {
       try {
-        const wavBlob = await this.convertToWav(results.audio);
-        this.downloadBlob(wavBlob, `ReuLive-Audio-${dateStr}.wav`);
+        results.audio = { blob: await this.convertToWav(results.audio), ext: 'wav' };
       } catch (e) {
-        console.warn('WAV conversion failed, downloading as webm:', e);
-        this.downloadBlob(results.audio, `ReuLive-Audio-${dateStr}.webm`);
+        console.warn('WAV conversion failed, keeping webm:', e);
+        results.audio = { blob: results.audio, ext: 'webm' };
       }
+    } else {
+      results.audio = null;
     }
 
     return results;

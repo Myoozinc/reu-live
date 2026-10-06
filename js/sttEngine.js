@@ -7,7 +7,9 @@ class STTEngine {
   constructor() {
     this.recognition = null;
     this.isListening = false;
-    this.language = 'es-ES';
+    this.language = 'es-ES';     // Web Speech (respaldo) locale
+    this.meetingLang = 'auto';   // 'auto' = Whisper detecta el idioma de cada intervención
+    this.translateTo = 'es';     // null = sin traducción
     this.transcriptHistory = [];
     this.restartAttempts = 0;
     this.maxRestartAttempts = 50;
@@ -125,7 +127,8 @@ class STTEngine {
         body: JSON.stringify({
           audioBase64: base64,
           mimeType: item.blob.type || 'audio/webm',
-          language: (this.language || 'es').slice(0, 2),
+          language: this.meetingLang || 'auto',
+          translateTo: this.translateTo || null,
           // Contexto para Whisper: lo último transcrito (mejora nombres y frases cortadas)
           prompt: this.transcriptHistory.slice(-3).map(t => t.text).join(' ').slice(-400)
         })
@@ -164,7 +167,10 @@ class STTEngine {
             speakerType: speakerType,
             text: text,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-            provider: 'whisper'
+            provider: 'whisper',
+            lang: data.language || '',
+            translation: this.cleanTranslation(text, data.translation),
+            translationLang: this.translateTo || ''
           };
 
           this.transcriptHistory.push(chunk);
@@ -192,6 +198,26 @@ class STTEngine {
 
     // Process next queued chunk
     setTimeout(() => this.processAudioQueue(), 100);
+  }
+
+  /**
+   * Language settings. `meetingLang`: 'auto' | 'es' | 'en' | 'fr' | 'it' | 'de'.
+   * `translateTo`: target language code, or null to disable live translation.
+   */
+  setLanguages({ meetingLang, translateTo, userLang }) {
+    this.meetingLang = meetingLang || 'auto';
+    this.translateTo = translateTo || null;
+    const locales = { es: 'es-ES', en: 'en-US', fr: 'fr-FR', it: 'it-IT', de: 'de-DE' };
+    const speechLang = this.meetingLang !== 'auto' ? this.meetingLang : (userLang || 'es');
+    this.language = locales[speechLang] || 'es-ES';
+    if (this.recognition) this.recognition.lang = this.language;
+  }
+
+  /** Ignore "translations" that just repeat the original (same language misdetected). */
+  cleanTranslation(original, translation) {
+    if (!translation) return '';
+    const norm = (t) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    return norm(original) === norm(translation) ? '' : translation.trim();
   }
 
   /**

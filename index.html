@@ -51,6 +51,9 @@
           <i class="fa-regular fa-clock"></i>
           <span id="timerText">00:00</span>
         </div>
+        <button id="btnLangSettings" class="btn-theme-toggle" title="Idioma y traducción en vivo" aria-label="Idioma y traducción">
+          <i class="fa-solid fa-language"></i>
+        </button>
         <button id="btnThemeToggle" class="btn-theme-toggle" title="Cambiar tema (Claro / Oscuro)" aria-label="Cambiar tema">
           <i class="fa-solid fa-moon"></i>
         </button>
@@ -84,7 +87,15 @@
             <i class="fa-solid fa-clock-rotate-left"></i> Historial
           </button>
         </div>
-        <span class="lobby-hint"><i class="fa-regular fa-circle-check"></i> Compatible con Zoom, Google Meet, Teams y presencial</span>
+        <span class="lobby-hint"><i class="fa-regular fa-circle-check"></i> Compatible con Zoom, Google Meet, Teams, WhatsApp y presencial</span>
+        <div class="lobby-quick-row">
+          <button class="lobby-chip" id="lobbyLangChip" type="button" title="Cambiar idioma y traducción">
+            <i class="fa-solid fa-language"></i> <span id="lobbyLangChipText">Idioma: Auto · Traducir a Español</span>
+          </button>
+          <button class="lobby-chip" id="btnOpenGuide" type="button" title="Cómo conectar tu llamada">
+            <i class="fa-solid fa-circle-question"></i> ¿Cómo conectar Zoom o WhatsApp?
+          </button>
+        </div>
       </div>
 
       <div class="lobby-features-grid">
@@ -246,42 +257,52 @@
         <!-- === Live Action Cards (Fixed in place, never lost in scroll) === -->
         <div class="live-action-cards" id="liveActionCards">
 
-          <!-- 1. Respuesta Inmediata -->
-          <div class="action-card card-direct">
+          <!-- 1. Respuesta principal: grande y legible de un vistazo -->
+          <div class="action-card card-direct card-main">
             <div class="card-header">
-              <span class="card-tag"><i class="fa-solid fa-bolt text-cyan"></i> Qué responder ahora</span>
-              <button class="card-copy-btn" data-target="liveDirectText" title="Copiar respuesta">
-                <i class="fa-regular fa-copy"></i> Copiar
-              </button>
+              <span class="card-tag"><i class="fa-solid fa-bolt text-cyan"></i> Qué decir ahora</span>
+              <div class="card-header-btns">
+                <button class="card-copy-btn" data-target="liveDirectText" title="Copiar respuesta">
+                  <i class="fa-regular fa-copy"></i> Copiar
+                </button>
+                <button class="btn-answer-now" id="btnAnswerNow" title="Generar una sugerencia nueva ahora mismo">
+                  <i class="fa-solid fa-wand-magic-sparkles"></i> Responder ahora
+                </button>
+              </div>
             </div>
-            <div class="card-body" id="liveDirectText">
+            <div class="card-body card-main-text" id="liveDirectText">
               "Hola a todos, estoy listo para iniciar y dar seguimiento a los puntos de la reunión."
             </div>
-          </div>
-
-          <!-- 2. Propuesta Inteligente -->
-          <div class="action-card card-proposal">
-            <div class="card-header">
-              <span class="card-tag"><i class="fa-solid fa-lightbulb text-purple"></i> Propuesta sugerida</span>
-              <button class="card-copy-btn" data-target="liveProposalText" title="Copiar propuesta">
-                <i class="fa-regular fa-copy"></i> Copiar
-              </button>
-            </div>
-            <div class="card-body" id="liveProposalText">
-              "Propongo revisar primero los temas principales de la agenda antes de profundizar en los detalles."
+            <div class="card-their-lang is-hidden" id="liveDirectTheirLang">
+              <span class="their-lang-tag" id="liveDirectTheirLangTag"><i class="fa-solid fa-language"></i> Dilo así</span>
+              <span id="liveDirectTheirLangText"></span>
             </div>
           </div>
 
-          <!-- 3. Pregunta Estratégica -->
-          <div class="action-card card-question">
-            <div class="card-header">
-              <span class="card-tag"><i class="fa-solid fa-circle-question text-pink"></i> Pregunta para la reunión</span>
-              <button class="card-copy-btn" data-target="liveQuestionText" title="Copiar pregunta">
-                <i class="fa-regular fa-copy"></i> Copiar
-              </button>
+          <!-- 2 y 3. Propuesta y pregunta: secundarias, compactas -->
+          <div class="secondary-cards-row">
+            <div class="action-card card-proposal card-compact">
+              <div class="card-header">
+                <span class="card-tag"><i class="fa-solid fa-lightbulb text-purple"></i> Propuesta</span>
+                <button class="card-copy-btn" data-target="liveProposalText" title="Copiar propuesta">
+                  <i class="fa-regular fa-copy"></i>
+                </button>
+              </div>
+              <div class="card-body" id="liveProposalText">
+                "Propongo revisar primero los temas principales de la agenda antes de profundizar en los detalles."
+              </div>
             </div>
-            <div class="card-body" id="liveQuestionText">
-              "¿Hay algún tema o requerimiento prioritario que debamos considerar antes de avanzar?"
+
+            <div class="action-card card-question card-compact">
+              <div class="card-header">
+                <span class="card-tag"><i class="fa-solid fa-circle-question text-pink"></i> Pregunta</span>
+                <button class="card-copy-btn" data-target="liveQuestionText" title="Copiar pregunta">
+                  <i class="fa-regular fa-copy"></i>
+                </button>
+              </div>
+              <div class="card-body" id="liveQuestionText">
+                "¿Hay algún tema o requerimiento prioritario que debamos considerar antes de avanzar?"
+              </div>
             </div>
           </div>
 
@@ -421,6 +442,138 @@
     </div>
   </div>
 
+  <!-- ===== Idioma y traducción ===== -->
+  <div class="user-history-modal is-hidden" id="langSettingsModal">
+    <div class="history-modal-content glass-panel modal-sm">
+      <div class="history-modal-header">
+        <div class="history-title-group">
+          <h3><i class="fa-solid fa-language text-sky"></i> Idioma y traducción</h3>
+          <p class="history-subtitle">Si alguien habla otro idioma, verás la traducción al instante</p>
+        </div>
+        <button class="btn-icon-soft" data-close-modal title="Cerrar"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="history-modal-body settings-form">
+        <label class="settings-field">
+          <span><i class="fa-solid fa-ear-listen text-sky"></i> Idioma de la reunión</span>
+          <select id="settingMeetingLang">
+            <option value="auto">Detectar automáticamente (varios idiomas)</option>
+            <option value="es">Español</option>
+            <option value="en">English</option>
+            <option value="fr">Français</option>
+            <option value="it">Italiano</option>
+            <option value="de">Deutsch</option>
+          </select>
+          <small>"Automático" reconoce cada intervención en su idioma. Si todos hablan el mismo, elegirlo mejora un poco la precisión.</small>
+        </label>
+        <label class="settings-field">
+          <span><i class="fa-solid fa-user text-sky"></i> Tu idioma (traducciones y sugerencias)</span>
+          <select id="settingUserLang">
+            <option value="es">Español</option>
+            <option value="en">English</option>
+            <option value="fr">Français</option>
+            <option value="it">Italiano</option>
+            <option value="de">Deutsch</option>
+          </select>
+        </label>
+        <label class="settings-toggle">
+          <input type="checkbox" id="settingTranslate" checked>
+          <span>Traducir en vivo lo que se diga en otro idioma</span>
+        </label>
+        <button class="btn btn-primary settings-save" data-close-modal><i class="fa-solid fa-check"></i> Listo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Guía de conexión ===== -->
+  <div class="user-history-modal is-hidden" id="guideModal">
+    <div class="history-modal-content glass-panel">
+      <div class="history-modal-header">
+        <div class="history-title-group">
+          <h3><i class="fa-solid fa-plug text-sky"></i> Cómo conectar tu llamada</h3>
+          <p class="history-subtitle">Para que la IA oiga a los demás, comparte el audio de la llamada</p>
+        </div>
+        <button class="btn-icon-soft" data-close-modal title="Cerrar"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="history-modal-body">
+        <div class="guide-tabs" role="tablist">
+          <button class="guide-tab active" data-guide="web"><i class="fa-solid fa-globe"></i> Zoom / Meet / Teams web</button>
+          <button class="guide-tab" data-guide="whatsapp"><i class="fa-brands fa-whatsapp"></i> WhatsApp</button>
+          <button class="guide-tab" data-guide="windows"><i class="fa-brands fa-windows"></i> App en Windows</button>
+          <button class="guide-tab" data-guide="mac"><i class="fa-brands fa-apple"></i> Mac</button>
+          <button class="guide-tab" data-guide="mobile"><i class="fa-solid fa-mobile-screen"></i> Celular</button>
+        </div>
+
+        <div class="guide-panel" data-guide-panel="web">
+          <ol class="guide-steps">
+            <li>Abre la llamada en <b>Chrome o Edge</b> (zoom.us, meet.google.com o teams.microsoft.com) en una pestaña.</li>
+            <li>Ponte <b>auriculares</b>, así tu micrófono no repite la voz de los demás.</li>
+            <li>En Reu.live pulsa <b>Iniciar Reunión</b> y elige la pestaña <b>"Pestaña de Chrome"</b>.</li>
+            <li>Selecciona la pestaña de la llamada y <b>activa "Compartir también el audio de la pestaña"</b>.</li>
+            <li>Pulsa <b>Compartir</b>. Verás "Audio del sistema conectado" en la transcripción.</li>
+          </ol>
+        </div>
+        <div class="guide-panel is-hidden" data-guide-panel="whatsapp">
+          <ol class="guide-steps">
+            <li><b>En el ordenador:</b> abre <b>web.whatsapp.com</b> en Chrome o Edge, o la app de escritorio.</li>
+            <li>Si usas WhatsApp Web: inicia la captura y comparte la <b>pestaña de WhatsApp</b> con <b>"Compartir audio"</b>.</li>
+            <li>Si usas la app de escritorio en Windows: sigue la pestaña <b>"App en Windows"</b>.</li>
+            <li><b>Desde el celular</b> no es posible captar el audio de una llamada de WhatsApp (el sistema lo bloquea). Mira la pestaña <b>"Celular"</b>.</li>
+          </ol>
+        </div>
+        <div class="guide-panel is-hidden" data-guide-panel="windows">
+          <ol class="guide-steps">
+            <li>Abre la app (Zoom, Teams, WhatsApp...) y ponte <b>auriculares</b>.</li>
+            <li>En Reu.live pulsa <b>Iniciar Reunión</b> y elige <b>"Pantalla completa"</b>.</li>
+            <li><b>Activa "Compartir también el audio del sistema"</b> (abajo a la izquierda del cuadro).</li>
+            <li>Pulsa <b>Compartir</b>. Todo lo que suene en el ordenador se transcribirá como "Interlocutor".</li>
+          </ol>
+        </div>
+        <div class="guide-panel is-hidden" data-guide-panel="mac">
+          <ol class="guide-steps">
+            <li>En Mac, Chrome casi nunca permite compartir el audio de otras apps.</li>
+            <li>La forma fiable: usa la <b>versión web</b> de la llamada (Zoom, Meet, Teams o WhatsApp Web) en una pestaña de Chrome.</li>
+            <li>Inicia la captura, elige <b>"Pestaña de Chrome"</b> y activa <b>"Compartir audio de la pestaña"</b>.</li>
+          </ol>
+        </div>
+        <div class="guide-panel is-hidden" data-guide-panel="mobile">
+          <ol class="guide-steps">
+            <li>Los celulares <b>no permiten</b> a ninguna web oír el audio de una llamada (WhatsApp, teléfono, Zoom app).</li>
+            <li>Opción 1: haz la llamada en el celular <b>en altavoz</b> y abre Reu.live en otro dispositivo (ordenador o tablet) cerca. Usa los botones <b>Tú / Interlocutor</b> para indicar quién habla.</li>
+            <li>Opción 2: haz la llamada desde el ordenador (WhatsApp Web, Zoom web...) y sigue esa guía.</li>
+          </ol>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Archivos de la reunión (video + audio + transcripción) ===== -->
+  <div class="user-history-modal is-hidden" id="exportModal">
+    <div class="history-modal-content glass-panel">
+      <div class="history-modal-header">
+        <div class="history-title-group">
+          <h3><i class="fa-solid fa-folder-open text-sky"></i> Archivos de la reunión</h3>
+          <p class="history-subtitle" id="exportFolderName">ReuLive</p>
+        </div>
+        <button class="btn-icon-soft" id="btnCloseExport" title="Cerrar"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="history-modal-body">
+        <ul class="export-file-list" id="exportFileList"></ul>
+
+        <div class="export-actions">
+          <button class="btn btn-primary" id="btnSaveFolder"><i class="fa-solid fa-folder-plus"></i> Guardar en una carpeta</button>
+          <button class="btn btn-outline" id="btnDownloadZip"><i class="fa-solid fa-file-zipper"></i> Descargar carpeta (.zip)</button>
+        </div>
+        <p class="export-hint" id="exportHint"></p>
+
+        <div class="export-summary" id="exportSummary">
+          <h4><i class="fa-solid fa-sparkles text-cyan"></i> Resumen final con IA</h4>
+          <div id="exportSummaryBody" class="text-muted"><i class="fa-solid fa-spinner fa-spin"></i> Generando resumen...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   </div> <!-- /.app-container -->
 
   <script src="js/telemetry.js"></script>
@@ -428,6 +581,7 @@
   <script src="js/mediaEngine.js"></script>
   <script src="js/sttEngine.js"></script>
   <script src="js/aiEngine.js"></script>
+  <script src="js/exportEngine.js"></script>
   <script src="js/app.js"></script>
 <!-- DATATA · presencia en directo (entra / sale) -->
 <script>
