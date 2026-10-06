@@ -1,6 +1,6 @@
 /**
  * ReuLive - Admin Dashboard Controller
- * Handles authentication (admin.one / Rona12345), 100% REAL telemetry & meeting data,
+ * Handles authentication (credentials from Vercel environment variables), 100% REAL telemetry & meeting data,
  * interactive Chart.js analytics graphics, transcript review, and full database backups.
  */
 
