@@ -1,6 +1,6 @@
 /**
  * ReuLive - Admin Dashboard & Authentication API
- * Protected with username: admin.one / password: Rona12345
+ * Protected with ADMIN_USERNAME / ADMIN_PASSWORD / ADMIN_SECRET (Vercel environment variables).
  * Provides metrics, telemetry, full meeting transcripts, and database backups.
  */
 
@@ -26,6 +26,12 @@ module.exports = async function handler(req, res) {
 
       if (!username || !password) {
         return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
+      }
+
+      if (!db.isAdminConfigured()) {
+        return res.status(503).json({
+          error: 'Panel bloqueado: configura ADMIN_USERNAME, ADMIN_PASSWORD y ADMIN_SECRET en Vercel y vuelve a desplegar.'
+        });
       }
 
       const isValid = db.validateAdminCredentials(username.trim(), password);

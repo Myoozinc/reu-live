@@ -66,7 +66,8 @@ class DBEngine {
       detailedAgreements: meeting.detailedAgreements || [],
       actionItems: meeting.actionItems || [],
       detailedActionItems: meeting.detailedActionItems || [],
-      hasVideo: Boolean(meeting.hasVideo)
+      hasVideo: Boolean(meeting.hasVideo),
+      aiReport: meeting.aiReport || null
     };
 
     // 1. Save locally in IndexedDB

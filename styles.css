@@ -2884,3 +2884,251 @@ summary.deep-item-summary::-webkit-details-marker {
     align-items: center;
   }
 }
+
+/* ==========================================
+   IDIOMAS, GUÍA, EXPORTACIÓN Y SUGERENCIA PRINCIPAL
+   ========================================== */
+.lobby-quick-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.lobby-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--trans-smooth);
+}
+.lobby-chip:hover {
+  border-color: var(--border-hover);
+  color: var(--text-main);
+}
+
+.modal-sm { max-width: 460px; }
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+.settings-field select {
+  font: inherit;
+  font-weight: 500;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-main);
+}
+.settings-field small {
+  font-weight: 400;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+  color: var(--text-main);
+  cursor: pointer;
+}
+.settings-toggle input { width: 18px; height: 18px; accent-color: var(--brand-blue); }
+.settings-save { align-self: flex-end; }
+
+/* Guía */
+.guide-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.guide-tab {
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.guide-tab.active {
+  background: var(--brand-blue);
+  border-color: var(--brand-blue);
+  color: #fff;
+}
+.guide-steps {
+  margin: 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--text-main);
+}
+
+/* Sugerencia principal grande */
+.card-main {
+  padding: 16px 18px;
+}
+.card-main .card-main-text {
+  font-size: 1.15rem;
+  line-height: 1.5;
+  font-weight: 600;
+}
+.card-header-btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-answer-now {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: var(--brand-blue);
+  color: #fff;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--trans-smooth);
+}
+.btn-answer-now:hover { filter: brightness(1.1); }
+.btn-answer-now:disabled { opacity: 0.6; cursor: wait; }
+.card-their-lang {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: var(--text-main);
+}
+.their-lang-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent-sky);
+}
+.secondary-cards-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.card-compact {
+  padding: 10px 12px;
+  gap: 6px;
+}
+.card-compact .card-body {
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+/* Traducción en la transcripción */
+.stream-item .translation {
+  margin-top: 4px;
+  padding-left: 8px;
+  border-left: 2px solid var(--accent-sky);
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+.stream-item .lang-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--bg-subtle);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.subtitles-text .subtitle-original {
+  display: block;
+  font-size: 0.75em;
+  opacity: 0.75;
+}
+
+/* Exportación */
+.export-file-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.export-file-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  font-size: 0.85rem;
+}
+.export-file-list li i { width: 18px; text-align: center; }
+.export-file-list .file-name { flex: 1; font-weight: 600; color: var(--text-main); word-break: break-all; }
+.export-file-list .file-size { color: var(--text-dim); font-size: 0.75rem; white-space: nowrap; }
+.export-file-list a { font-size: 0.75rem; font-weight: 600; color: var(--brand-blue); text-decoration: none; white-space: nowrap; }
+.export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.export-hint {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+.export-summary {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+}
+.export-summary h4 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  color: var(--text-main);
+}
+.export-summary ul { margin: 4px 0 10px; padding-left: 20px; font-size: 0.85rem; line-height: 1.5; color: var(--text-main); }
+.export-summary p { font-size: 0.88rem; line-height: 1.55; color: var(--text-main); margin: 0 0 8px; }
+.export-summary h5 { margin: 10px 0 2px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); }
+
+@media (max-width: 640px) {
+  .header-actions { gap: 6px; flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
+  .audio-mixer-info { flex-wrap: wrap; gap: 8px; min-width: 0; }
+  .viewport-footer { flex-wrap: wrap; }
+  .secondary-cards-row { grid-template-columns: 1fr; }
+  .card-main .card-main-text { font-size: 1.05rem; }
+  .export-actions .btn { flex: 1 1 100%; justify-content: center; }
+}

@@ -27,6 +27,8 @@ class MediaEngine {
     this.onVolumeChange = null;
     this.onAudioChunk = null;
     this.chunkTimer = null;
+    this.segmenters = [];
+    this.sourceLevels = { interlocutor: 0, user: 0, mic: 0 };
     this.isMicMuted = false;
     this.isVideoMuted = false;
     this.micGainNode = null;
@@ -64,17 +66,24 @@ class MediaEngine {
     const mobile = this.isMobile();
     let hasVideo = false;
     let sourceLabel = '';
+    this.displayHasAudio = false;
     const canShareScreen = navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function';
 
     if (!mobile || (preferredSource === 'screen' && canShareScreen)) {
       // DESKTOP or Screen-capable tablet: Try screen/window capture with system audio
       try {
         this.displayStream = await navigator.mediaDevices.getDisplayMedia({
-          video: { displaySurface: 'window', cursor: 'always' },
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+          video: { cursor: 'always' },
+          // Sin procesado de voz en el audio del sistema: la cancelación de eco y la
+          // supresión de ruido lo distorsionan y empeoran la transcripción.
+          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+          systemAudio: 'include',          // Windows/ChromeOS: ofrece "Compartir audio del sistema"
+          selfBrowserSurface: 'exclude',   // no ofrecer la propia pestaña de ReuLive
+          surfaceSwitching: 'include'
         });
         hasVideo = this.displayStream.getVideoTracks().length > 0;
-        sourceLabel = 'Pantalla + Audio Sistema';
+        this.displayHasAudio = this.displayStream.getAudioTracks().length > 0;
+        sourceLabel = this.displayHasAudio ? 'Pantalla + Audio Sistema' : 'Pantalla SIN audio (solo micrófono)';
       } catch (err) {
         console.warn('Screen share denied or unavailable:', err);
         this.displayStream = null;
@@ -137,6 +146,7 @@ class MediaEngine {
     return {
       hasVideo,
       sourceLabel,
+      sharedScreenWithoutAudio: !!this.displayStream && !this.displayHasAudio,
       videoTrack: this.getVideoTrack()
     };
   }
@@ -282,17 +292,17 @@ class MediaEngine {
     this.recordedChunks = [];
     this.audioChunks = [];
 
-    // Video+Audio recorder
+    // Video+Audio recorder: MP4 first (normal video file that opens in any player;
+    // Chrome/Edge 126+ and Safari), WebM only where MP4 isn't available (Firefox).
     let options = {};
-    if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
-      options = { mimeType: 'video/webm;codecs=vp9,opus' };
-    } else if (MediaRecorder.isTypeSupported('video/webm')) {
-      options = { mimeType: 'video/webm' };
-    } else if (MediaRecorder.isTypeSupported('video/mp4')) {
-      options = { mimeType: 'video/mp4' };
-    } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-      options = { mimeType: 'audio/webm' };
-    }
+    const hasVideoTrack = stream.getVideoTracks().length > 0;
+    const candidates = hasVideoTrack
+      ? ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4;codecs=avc1,opus', 'video/mp4',
+         'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+      : ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'];
+    const supported = candidates.find(t => MediaRecorder.isTypeSupported(t));
+    if (supported) options = { mimeType: supported };
+    this.recordingHasVideo = hasVideoTrack;
 
     try {
       this.mediaRecorder = new MediaRecorder(stream, options);
@@ -331,85 +341,161 @@ class MediaEngine {
   }
 
   /**
-   * Periodically emits 8-second audio chunks for real-time Whisper transcription (/api/transcribe).
-   * Also separates tracks (Zoom/System audio vs Mic) to assign speaker accurately.
+   * Real-time transcription segmenter with voice activity detection (VAD).
+   * One loop per audio source (system audio -> 'interlocutor', mic -> 'user').
+   * Cuts audio at natural pauses instead of fixed 8 s slices (no words split in half,
+   * no gaps between slices) and drops silent segments, which saves free Whisper quota
+   * and prevents Whisper from hallucinating text on silence.
    */
   startRealtimeChunkRecorder() {
-    if (this.chunkTimer) clearInterval(this.chunkTimer);
+    this.stopRealtimeSegmenters();
+    if (this.audioContext && this.audioContext.state === 'suspended') {
+      this.audioContext.resume().catch(() => {});
+    }
 
-    const emitChunkFromStream = (stream, speakerType) => {
-      if (!stream || stream.getAudioTracks().length === 0 || !this.isRecording) return;
-      let chunks = [];
-      let recorder = null;
+    const hasDisplayAudio = this.displayStream && this.displayStream.getAudioTracks().length > 0;
+    const micTrack = this.micStream && this.micStream.getAudioTracks().length > 0 ? this.micStream.getAudioTracks()[0] : null;
 
+    if (hasDisplayAudio) {
+      // System audio (Zoom / WhatsApp / Meet participants) -> 'interlocutor'
+      this.startSegmenter(new MediaStream([this.displayStream.getAudioTracks()[0]]), 'interlocutor');
+      // Local microphone -> 'user' ("Tú")
+      if (micTrack && !this.displayStream.getAudioTracks().includes(micTrack)) {
+        this.startSegmenter(new MediaStream([micTrack]), 'user');
+      }
+    } else if (micTrack) {
+      // Only microphone (in-person meeting or call on speaker): speaker comes from the
+      // manual switch in the UI (null -> STTEngine uses its active speaker).
+      this.startSegmenter(new MediaStream([micTrack]), null);
+    } else if (this.audioRecordingDest) {
+      this.startSegmenter(this.audioRecordingDest.stream, null);
+    }
+  }
+
+  startSegmenter(stream, speakerType) {
+    const ctx = this.audioContext;
+    if (!ctx || !stream) return;
+
+    const TICK_MS = 100;
+    const MIN_SEGMENT_MS = 2500;   // don't cut before this
+    const MAX_SEGMENT_MS = 14000;  // force a cut on long monologues
+    const PAUSE_MS = 700;          // silence that marks the end of a phrase
+    const MIN_VOICE_MS = 500;      // less voice than this = noise, discard
+    const IDLE_RESET_MS = 6000;    // restart silent recorders to keep blobs small
+
+    let source;
+    try {
+      source = ctx.createMediaStreamSource(stream);
+    } catch (e) {
+      console.warn('Segmenter source error:', e);
+      return;
+    }
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    source.connect(analyser);
+    const buf = new Float32Array(analyser.fftSize);
+    const levelKey = speakerType || 'mic';
+    let noiseFloor = 0.003;
+    let seg = null;
+
+    const startSegment = () => {
+      let rec;
       try {
-        recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+        rec = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
       } catch (e) {
-        try { recorder = new MediaRecorder(stream); } catch (e2) { return; }
+        try { rec = new MediaRecorder(stream); } catch (e2) { seg = null; return; }
       }
+      const chunks = [];
+      rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+      seg = { recorder: rec, chunks, startedAt: Date.now(), voicedMs: 0, silenceMs: 0 };
+      try { rec.start(); } catch (err) { console.warn('Chunk recorder error:', err); seg = null; }
+    };
 
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) chunks.push(e.data);
-      };
-
+    const finishSegment = (emit) => {
+      if (!seg) return;
+      const { recorder, chunks, voicedMs, startedAt } = seg;
+      const shouldEmit = emit && voicedMs >= MIN_VOICE_MS;
       recorder.onstop = () => {
-        if (chunks.length > 0 && this.onAudioChunk && this.isRecording) {
-          const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
-          if (blob.size > 2500) {
-            this.onAudioChunk({ blob, speakerType });
-          }
+        if (!shouldEmit || !this.isRecording || !this.onAudioChunk || chunks.length === 0) return;
+        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+        if (blob.size > 2000) {
+          this.onAudioChunk({ blob, speakerType, startedAt, voicedMs });
         }
       };
+      try { if (recorder.state !== 'inactive') recorder.stop(); } catch (e) {}
+      seg = null;
+    };
 
-      try {
-        recorder.start();
-        setTimeout(() => {
-          if (recorder && recorder.state === 'recording') {
-            try { recorder.stop(); } catch (e) {}
-          }
-        }, 8000);
-      } catch (err) {
-        console.warn('Chunk recorder error:', err);
+    const tick = () => {
+      if (!this.isRecording) {
+        stop();
+        return;
+      }
+      if (!seg) startSegment();
+      if (!seg) return;
+
+      analyser.getFloatTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+      const rms = Math.sqrt(sum / buf.length);
+
+      // Adaptive noise floor: drops fast, rises slowly (tolerates background noise)
+      noiseFloor = rms < noiseFloor ? noiseFloor * 0.9 + rms * 0.1 : noiseFloor * 0.995 + rms * 0.005;
+      let voiced = rms > Math.max(0.006, noiseFloor * 2.5);
+
+      if (speakerType === 'user') {
+        if (this.isMicMuted) voiced = false;
+        // Without headphones the mic also picks up the other person: while system audio
+        // is active, don't count mic energy as the user's voice.
+        if (this.sourceLevels.interlocutor > 0) voiced = false;
+      }
+      this.sourceLevels[levelKey] = voiced ? rms : 0;
+
+      if (voiced) {
+        seg.voicedMs += TICK_MS;
+        seg.silenceMs = 0;
+      } else {
+        seg.silenceMs += TICK_MS;
+      }
+
+      const elapsed = Date.now() - seg.startedAt;
+      const pauseCut = elapsed >= MIN_SEGMENT_MS && seg.voicedMs >= MIN_VOICE_MS && seg.silenceMs >= PAUSE_MS;
+      const maxCut = elapsed >= MAX_SEGMENT_MS;
+      const idleReset = seg.voicedMs === 0 && elapsed >= IDLE_RESET_MS;
+
+      if (pauseCut || maxCut || idleReset) {
+        // Start the next recorder before stopping the current one: no audio gaps
+        const previous = seg;
+        startSegment();
+        const next = seg;
+        seg = previous;
+        finishSegment(!idleReset);
+        seg = next;
       }
     };
 
-    const recordIntervalSlice = () => {
-      if (!this.isRecording) return;
-
-      const hasDisplayAudio = this.displayStream && this.displayStream.getAudioTracks().length > 0;
-      const hasMicAudio = this.micStream && this.micStream.getAudioTracks().length > 0 && !this.isMicMuted;
-
-      if (hasDisplayAudio) {
-        // System audio (Zoom / Meeting participants) -> 'interlocutor'
-        const sysStream = new MediaStream([this.displayStream.getAudioTracks()[0]]);
-        emitChunkFromStream(sysStream, 'interlocutor');
-
-        // Local microphone -> 'user' ("Tú")
-        if (hasMicAudio) {
-          const micTrack = this.micStream.getAudioTracks()[0];
-          if (!this.displayStream.getAudioTracks().includes(micTrack)) {
-            const micStreamObj = new MediaStream([micTrack]);
-            emitChunkFromStream(micStreamObj, 'user');
-          }
-        }
-      } else if (hasMicAudio) {
-        // Only microphone is active -> this is the user speaking ('user')
-        const micStreamObj = new MediaStream([this.micStream.getAudioTracks()[0]]);
-        emitChunkFromStream(micStreamObj, 'user');
-      } else if (this.audioRecordingDest) {
-        emitChunkFromStream(this.audioRecordingDest.stream, 'user');
-      }
+    const timer = setInterval(tick, TICK_MS);
+    const stop = () => {
+      clearInterval(timer);
+      finishSegment(false);
+      try { source.disconnect(); } catch (e) {}
+      this.sourceLevels[levelKey] = 0;
+      this.segmenters = this.segmenters.filter(s => s !== handle);
     };
+    const handle = { stop };
+    this.segmenters.push(handle);
+  }
 
-    recordIntervalSlice();
-    this.chunkTimer = setInterval(recordIntervalSlice, 8500);
+  stopRealtimeSegmenters() {
+    (this.segmenters || []).slice().forEach(s => s.stop());
+    this.segmenters = [];
   }
 
   /**
-   * Stop recording and auto-download video + WAV files
+   * Stop recording and return the files (the app saves them together in one folder):
+   * { video: { blob, ext } | null, audio: { blob, ext } | null }
    */
   async stopAndExport() {
-    const dateStr = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
     const results = { video: null, audio: null };
 
     // Stop video recorder
@@ -442,20 +528,21 @@ class MediaEngine {
 
     this.isRecording = false;
 
-    // Auto-download video
-    if (results.video && results.video.blob.size > 0) {
-      this.downloadBlob(results.video.blob, `ReuLive-Video-${dateStr}.${results.video.ext}`);
+    // Audio-only sessions (mic without camera) don't produce a "video" file
+    if (results.video && (!this.recordingHasVideo || results.video.blob.size === 0)) {
+      results.video = null;
     }
 
-    // Convert audio to WAV and download
+    // Convert audio to WAV
     if (results.audio && results.audio.size > 0) {
       try {
-        const wavBlob = await this.convertToWav(results.audio);
-        this.downloadBlob(wavBlob, `ReuLive-Audio-${dateStr}.wav`);
+        results.audio = { blob: await this.convertToWav(results.audio), ext: 'wav' };
       } catch (e) {
-        console.warn('WAV conversion failed, downloading as webm:', e);
-        this.downloadBlob(results.audio, `ReuLive-Audio-${dateStr}.webm`);
+        console.warn('WAV conversion failed, keeping webm:', e);
+        results.audio = { blob: results.audio, ext: 'webm' };
       }
+    } else {
+      results.audio = null;
     }
 
     return results;
@@ -617,6 +704,7 @@ class MediaEngine {
   }
 
   stopAll() {
+    this.stopRealtimeSegmenters();
     if (this.chunkTimer) clearInterval(this.chunkTimer);
     this.chunkTimer = null;
     if (this.animFrameId) cancelAnimationFrame(this.animFrameId);

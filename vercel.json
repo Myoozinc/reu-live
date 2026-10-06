@@ -1,9 +1,23 @@
 {
   "version": 2,
   "cleanUrls": true,
+  "functions": {
+    "api/chat.js": {
+      "maxDuration": 60
+    },
+    "api/transcribe.js": {
+      "maxDuration": 30
+    }
+  },
   "rewrites": [
-    { "source": "/admin", "destination": "/admin.html" },
-    { "source": "/admin/", "destination": "/admin.html" }
+    {
+      "source": "/admin",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/admin/",
+      "destination": "/admin.html"
+    }
   ],
   "headers": [
     {

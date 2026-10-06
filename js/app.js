@@ -17,6 +17,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let isVoiceChatting = false;
   let voiceChatRecognition = null;
   let copilotUpdateDebounce = null;
+  let lastCopilotRequestAt = 0;
+  const COPILOT_MIN_INTERVAL_MS = 6000;
 
   // ===== DOM Elements =====
   // Header
@@ -75,6 +77,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const liveProposalText = document.getElementById('liveProposalText');
   const liveQuestionText = document.getElementById('liveQuestionText');
   const btnRefreshCopilot = document.getElementById('btnRefreshCopilot');
+  const liveDirectTheirLang = document.getElementById('liveDirectTheirLang');
+  const liveDirectTheirLangTag = document.getElementById('liveDirectTheirLangTag');
+  const liveDirectTheirLangText = document.getElementById('liveDirectTheirLangText');
   const customReplyCard = document.getElementById('customReplyCard');
   const customReplyText = document.getElementById('customReplyText');
 
@@ -130,6 +135,97 @@ document.addEventListener('DOMContentLoaded', () => {
 
   initTheme();
 
+  // ===== Helpers =====
+  const escapeHtml = (str) => String(str == null ? '' : str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+  const LANG_LABELS = { auto: 'Auto', es: 'Español', en: 'English', fr: 'Français', it: 'Italiano', de: 'Deutsch' };
+
+  const storage = {
+    get(key, fallback) {
+      try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; }
+    },
+    set(key, value) {
+      try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+    }
+  };
+
+  // ===== Modals (idioma, guía, archivos) =====
+  const openModal = (el) => { if (el) el.classList.remove('is-hidden'); };
+  const closeModal = (el) => { if (el) el.classList.add('is-hidden'); };
+  document.querySelectorAll('[data-close-modal]').forEach(btn => {
+    btn.addEventListener('click', () => closeModal(btn.closest('.user-history-modal')));
+  });
+  ['langSettingsModal', 'guideModal'].forEach(id => {
+    const modal = document.getElementById(id);
+    if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(modal); });
+  });
+
+  // ===== Idioma y traducción en vivo =====
+  const langSettingsModal = document.getElementById('langSettingsModal');
+  const settingMeetingLang = document.getElementById('settingMeetingLang');
+  const settingUserLang = document.getElementById('settingUserLang');
+  const settingTranslate = document.getElementById('settingTranslate');
+  const lobbyLangChipText = document.getElementById('lobbyLangChipText');
+  let langSettings = Object.assign({ meetingLang: 'auto', userLang: 'es', translate: true }, storage.get('reulive.lang', {}));
+
+  const applyLangSettings = () => {
+    if (!LANG_LABELS[langSettings.meetingLang]) langSettings.meetingLang = 'auto';
+    if (!LANG_LABELS[langSettings.userLang] || langSettings.userLang === 'auto') langSettings.userLang = 'es';
+    sttEngine.setLanguages({
+      meetingLang: langSettings.meetingLang,
+      translateTo: langSettings.translate ? langSettings.userLang : null,
+      userLang: langSettings.userLang
+    });
+    aiEngine.userLang = langSettings.userLang;
+    if (voiceChatRecognition) voiceChatRecognition.lang = sttEngine.language;
+    if (settingMeetingLang) settingMeetingLang.value = langSettings.meetingLang;
+    if (settingUserLang) settingUserLang.value = langSettings.userLang;
+    if (settingTranslate) settingTranslate.checked = !!langSettings.translate;
+    if (lobbyLangChipText) {
+      lobbyLangChipText.textContent = `Idioma: ${LANG_LABELS[langSettings.meetingLang]}` +
+        (langSettings.translate ? ` · Traducir a ${LANG_LABELS[langSettings.userLang]}` : ' · Sin traducción');
+    }
+    storage.set('reulive.lang', langSettings);
+  };
+
+  [settingMeetingLang, settingUserLang, settingTranslate].forEach(el => {
+    if (!el) return;
+    el.addEventListener('change', () => {
+      langSettings = {
+        meetingLang: settingMeetingLang.value,
+        userLang: settingUserLang.value,
+        translate: settingTranslate.checked
+      };
+      applyLangSettings();
+    });
+  });
+  ['btnLangSettings', 'lobbyLangChip'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) btn.addEventListener('click', () => openModal(langSettingsModal));
+  });
+
+  // ===== Guía de conexión =====
+  const guideModal = document.getElementById('guideModal');
+  const showGuideTab = (key) => {
+    document.querySelectorAll('.guide-tab').forEach(t => t.classList.toggle('active', t.dataset.guide === key));
+    document.querySelectorAll('.guide-panel').forEach(p => p.classList.toggle('is-hidden', p.dataset.guidePanel !== key));
+  };
+  document.querySelectorAll('.guide-tab').forEach(tab => tab.addEventListener('click', () => showGuideTab(tab.dataset.guide)));
+  const openGuide = () => {
+    const ua = navigator.userAgent;
+    showGuideTab(mediaEngine.isMobile() ? 'mobile' : /Mac OS X/.test(ua) ? 'mac' : 'web');
+    openModal(guideModal);
+  };
+  const btnOpenGuide = document.getElementById('btnOpenGuide');
+  if (btnOpenGuide) btnOpenGuide.addEventListener('click', openGuide);
+  // Primera visita: la causa nº 1 de "no transcribe a los demás" es no compartir el audio
+  if (!storage.get('reulive.guideSeen', false)) {
+    storage.set('reulive.guideSeen', true);
+    setTimeout(openGuide, 600);
+  }
+
   // ===== Initialize =====
   mediaEngine.initCanvas(audioCanvas);
 
@@ -176,21 +272,49 @@ document.addEventListener('DOMContentLoaded', () => {
       copilotSubtitle.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-cyan"></i> Actualizando sugerencias con IA...';
     }
 
+    const quote = (t) => (t ? `"${String(t).replace(/^"|"$/g, '')}"` : '—');
+    let copilotData = null;
     try {
-      const copilotData = await aiEngine.fetchLiveCopilot(sttEngine.transcriptHistory);
-      if (copilotData) {
-        if (copilotLiveSummary) copilotLiveSummary.textContent = copilotData.summary;
-        if (liveDirectText) liveDirectText.textContent = `"${copilotData.direct_response.replace(/^"|"$/g, '')}"`;
-        if (liveProposalText) liveProposalText.textContent = `"${copilotData.proposal.replace(/^"|"$/g, '')}"`;
-        if (liveQuestionText) liveQuestionText.textContent = `"${copilotData.question.replace(/^"|"$/g, '')}"`;
-        if (currentTopicText && copilotData.topic) currentTopicText.textContent = copilotData.topic;
-        if (analyticsCurrentTopic && copilotData.topic) analyticsCurrentTopic.textContent = copilotData.topic;
+      copilotData = await aiEngine.fetchLiveCopilot(sttEngine.transcriptHistory);
+      // null = a newer request superseded this one: leave the HUD to that request
+      if (!copilotData) return;
+
+      copilotLiveSummary.textContent = copilotData.summary;
+      if (liveDirectText) liveDirectText.textContent = quote(copilotData.direct_response);
+      if (liveProposalText) liveProposalText.textContent = quote(copilotData.proposal);
+      if (liveQuestionText) liveQuestionText.textContent = quote(copilotData.question);
+      if (liveDirectTheirLang) {
+        const say = copilotData.sayInTheirLanguage;
+        const theirs = copilotData.theirLanguage;
+        const show = !!say && !!theirs && theirs !== aiEngine.userLang;
+        liveDirectTheirLang.classList.toggle('is-hidden', !show);
+        if (show) {
+          liveDirectTheirLangTag.innerHTML = `<i class="fa-solid fa-language"></i> Dilo en ${escapeHtml(LANG_LABELS[theirs] || theirs.toUpperCase())}`;
+          liveDirectTheirLangText.textContent = quote(say);
+        }
+      }
+      if (currentTopicText && copilotData.topic) currentTopicText.textContent = copilotData.topic;
+      if (analyticsCurrentTopic && copilotData.topic) analyticsCurrentTopic.textContent = copilotData.topic;
+
+      // The AI also detects agreements, tasks and sentiment: refresh those panels
+      if (copilotData.source === 'ai' && sttEngine.transcriptHistory.length > 0) {
+        const aiMeta = aiEngine.processTranscript(sttEngine.transcriptHistory);
+        if (aiMeta) updateMetaUI(aiMeta);
       }
     } catch (e) {
       console.warn('Error updating live copilot HUD:', e);
     } finally {
-      if (copilotSubtitle) {
-        copilotSubtitle.textContent = 'Conectado a toda la transcripción en vivo';
+      if (copilotSubtitle && copilotData) {
+        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        if (copilotData.source === 'ai') {
+          copilotSubtitle.innerHTML = `<i class="fa-solid fa-circle text-emerald" style="font-size:0.55em;vertical-align:middle"></i> IA en vivo · actualizado ${time}`;
+          copilotSubtitle.title = copilotData.provider || '';
+        } else if (sttEngine.transcriptHistory.length > 0) {
+          copilotSubtitle.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-amber"></i> Modo básico sin IA (revisa GROQ_API_KEY o el límite gratuito)';
+          copilotSubtitle.title = '';
+        } else {
+          copilotSubtitle.textContent = 'Esperando conversación...';
+        }
       }
     }
   };
@@ -198,6 +322,21 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnRefreshCopilot) {
     btnRefreshCopilot.addEventListener('click', () => {
       updateLiveCopilotHUD();
+    });
+  }
+
+  // "Responder ahora": skip the debounce/throttle and ask for a fresh suggestion right away
+  const btnAnswerNow = document.getElementById('btnAnswerNow');
+  if (btnAnswerNow) {
+    btnAnswerNow.addEventListener('click', async () => {
+      if (copilotUpdateDebounce) clearTimeout(copilotUpdateDebounce);
+      lastCopilotRequestAt = Date.now();
+      btnAnswerNow.disabled = true;
+      try {
+        await updateLiveCopilotHUD();
+      } finally {
+        btnAnswerNow.disabled = false;
+      }
     });
   }
 
@@ -213,15 +352,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // Add to transcript
     appendTranscriptItem(chunk);
 
-    // Brief subtitle display
+    // Brief subtitle display (translated when the person speaks another language)
     if (subtitlesText) {
-      subtitlesText.textContent = chunk.text;
+      const shown = chunk.translation || chunk.text;
+      subtitlesText.innerHTML = chunk.translation
+        ? `${escapeHtml(chunk.translation)}<span class="subtitle-original">${escapeHtml(chunk.text)}</span>`
+        : escapeHtml(chunk.text);
       subtitlesOverlay.classList.add('visible');
+      const holdMs = Math.min(9000, 3000 + shown.length * 40);
       setTimeout(() => {
-        if (subtitlesText.textContent === chunk.text) {
+        if (subtitlesText.textContent.startsWith(shown)) {
           subtitlesOverlay.classList.remove('visible');
         }
-      }, 3000);
+      }, holdMs);
     }
 
     // Process metadata
@@ -232,9 +375,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Debounce Live Copilot HUD update so it doesn't flood API on every single phrase
     if (copilotUpdateDebounce) clearTimeout(copilotUpdateDebounce);
+    // Faster when the other person just finished talking (that's when you need an answer)
+    // and never more than one call every ~6 s (keeps within Groq's free per-minute limits)
+    const baseDelay = chunk.speakerType === 'interlocutor' ? 1500 : 4000;
+    const sinceLast = Date.now() - lastCopilotRequestAt;
     copilotUpdateDebounce = setTimeout(() => {
+      lastCopilotRequestAt = Date.now();
       updateLiveCopilotHUD();
-    }, 4000);
+    }, Math.max(baseDelay, COPILOT_MIN_INTERVAL_MS - sinceLast));
   };
 
   sttEngine.onStatusChange = (status) => {
@@ -265,7 +413,8 @@ document.addEventListener('DOMContentLoaded', () => {
           const speakerSpan = item.querySelector('.speaker span');
           if (speakerSpan) {
             const icon = chunk.speakerType === 'user' ? 'fa-solid fa-user' : 'fa-solid fa-desktop';
-            speakerSpan.innerHTML = `<i class="${icon}"></i> ${chunk.speaker}`;
+            const langTag = chunk.lang ? `<span class="lang-tag">${escapeHtml(chunk.lang)}</span>` : '';
+            speakerSpan.innerHTML = `<i class="${icon}"></i> ${escapeHtml(chunk.speaker)}${langTag}`;
           }
         }
       });
@@ -440,6 +589,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
       sourceLabel.textContent = `Fuente: ${result.sourceLabel || 'Micrófono'}`;
 
+      // Guía de captura: sin audio del sistema la IA solo oye el micrófono
+      if (transcriptStream) {
+        let tip = '';
+        if (result.sharedScreenWithoutAudio) {
+          tip = '<i class="fa-solid fa-triangle-exclamation text-amber"></i> Compartiste pantalla <b>sin audio</b>: no se oirá a los demás. Detén y vuelve a compartir marcando <b>"Compartir audio"</b> (en Chrome, comparte la <b>pestaña</b> de Zoom/Meet/WhatsApp Web o, en Windows, la <b>pantalla completa</b>).';
+        } else if (!mediaEngine.displayStream) {
+          tip = '<i class="fa-solid fa-circle-info text-cyan"></i> Modo solo micrófono: pon la llamada en <b>altavoz</b> e indica quién habla con los botones <b>Tú / Interlocutor</b>.';
+        } else {
+          tip = '<i class="fa-solid fa-headphones text-cyan"></i> Audio del sistema conectado. Usa <b>auriculares</b> para que tu micrófono no capte también al interlocutor.';
+        }
+        const tipEl = document.createElement('div');
+        tipEl.className = 'stream-item system-msg';
+        tipEl.innerHTML = `<span class="time">00:00</span><span class="text">${tip}</span>`;
+        transcriptStream.appendChild(tipEl);
+      }
+
       // Start recording
       mediaEngine.startRecording();
 
@@ -488,13 +653,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  let isStopping = false;
   const stopCapture = async () => {
+    if (!isActive || isStopping) return;
+    isStopping = true;
     btnCapture.disabled = true;
     btnCaptureText.textContent = 'Guardando...';
     updateStatus(true, 'GUARDANDO ARCHIVOS...');
 
     sttEngine.stopListening();
-    await mediaEngine.stopAndExport();
+    let mediaFiles = { video: null, audio: null };
+    try {
+      mediaFiles = await mediaEngine.stopAndExport();
+    } catch (err) {
+      console.warn('Could not finalize recording files:', err);
+    }
     mediaEngine.stopAll();
     stopTimer();
 
@@ -542,9 +715,11 @@ document.addEventListener('DOMContentLoaded', () => {
     btnCapture.querySelector('i').className = 'fa-solid fa-circle-dot';
     sourceLabel.textContent = 'Fuente: Sin Conectar';
 
-    // Save meeting to Database (IndexedDB + Server API) with clean state
-    if (sttEngine.transcriptHistory.length > 0 || timerSeconds >= 5) {
+    // Meeting record (saved once the AI summary is ready, so it's stored complete)
+    const hasContent = sttEngine.transcriptHistory.length > 0 || timerSeconds >= 5;
+    if (hasContent || mediaFiles.video || mediaFiles.audio) {
       const calculatedMetrics = aiEngine.detailedMetrics || aiEngine.calculateDetailedMetrics(sttEngine.transcriptHistory);
+      const transcript = sttEngine.transcriptHistory.map(t => ({ ...t }));
       const meetingData = {
         id: `meet_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
         timestamp: new Date().toISOString(),
@@ -555,16 +730,31 @@ document.addEventListener('DOMContentLoaded', () => {
         sentiment: aiEngine.sentiment || 'Neutral',
         intensity: aiEngine.meetingIntensity || 'Media / Productiva',
         tone: aiEngine.meetingTone || 'Coordinación General',
-        interventionsCount: sttEngine.transcriptHistory.length,
+        interventionsCount: transcript.length,
         metrics: calculatedMetrics,
-        transcript: [...sttEngine.transcriptHistory],
+        transcript,
+        languages: [...new Set(transcript.map(t => t.lang).filter(Boolean))],
         agreements: [...aiEngine.agreements],
         detailedAgreements: [...aiEngine.detailedAgreements],
         actionItems: [...aiEngine.actionItems],
         detailedActionItems: [...aiEngine.detailedActionItems],
-        hasVideo: !isVideoMuted
+        hasVideo: !!mediaFiles.video
       };
-      dbEngine.saveMeeting(meetingData).catch(e => console.warn('Could not save meeting:', e));
+
+      // Started before aiEngine.reset(): the request body captures the current memory
+      const reportPromise = transcript.length > 0
+        ? Promise.race([
+            aiEngine.generateFinalReport(transcript),
+            new Promise(resolve => setTimeout(() => resolve(null), 60000))
+          ])
+        : Promise.resolve(null);
+
+      reportPromise.then(report => {
+        if (report) meetingData.aiReport = report;
+        if (hasContent) dbEngine.saveMeeting(meetingData).catch(e => console.warn('Could not save meeting:', e));
+      });
+
+      showExportModal(meetingData, mediaFiles, reportPromise);
     }
 
     // Clean memory after saving so subsequent meetings start completely clean
@@ -575,7 +765,148 @@ document.addEventListener('DOMContentLoaded', () => {
     subtitlesText.textContent = '';
 
     updateStatus(false, 'Listo');
+    isStopping = false;
   };
+
+  // ===== MEETING FILES: video + WAV + transcript together in one folder =====
+  const exportModal = document.getElementById('exportModal');
+  const exportFileList = document.getElementById('exportFileList');
+  const exportFolderName = document.getElementById('exportFolderName');
+  const exportHint = document.getElementById('exportHint');
+  const exportSummaryBody = document.getElementById('exportSummaryBody');
+  const btnSaveFolder = document.getElementById('btnSaveFolder');
+  const btnDownloadZip = document.getElementById('btnDownloadZip');
+  const btnCloseExport = document.getElementById('btnCloseExport');
+  let exportState = null;
+
+  const renderExportFiles = () => {
+    if (!exportState || !exportFileList) return;
+    exportState.urls.forEach(u => URL.revokeObjectURL(u));
+    exportState.urls = [];
+    exportFileList.innerHTML = '';
+    exportState.files.forEach(f => {
+      const url = URL.createObjectURL(f.blob);
+      exportState.urls.push(url);
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <i class="fa-solid ${f.icon} text-sky"></i>
+        <span class="file-name">${escapeHtml(f.name)}</span>
+        <span class="file-size">${ExportEngine.formatSize(f.blob.size)}</span>
+        <a href="${url}" download="${escapeHtml(`${exportState.folder} - ${f.name}`)}"><i class="fa-solid fa-download"></i> Descargar</a>
+      `;
+      li.querySelector('a').addEventListener('click', () => { exportState.saved = true; });
+      exportFileList.appendChild(li);
+    });
+  };
+
+  const renderReport = (report) => {
+    if (!exportSummaryBody) return;
+    if (!report) {
+      exportSummaryBody.innerHTML = '<p class="text-muted">No se pudo generar el resumen con IA (sin conexión o límite gratuito alcanzado). La transcripción completa sí se guarda.</p>';
+      return;
+    }
+    const list = (title, items) => (items && items.length)
+      ? `<h5>${title}</h5><ul>${items.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul>` : '';
+    const tasks = (report.action_items || []).map(t => {
+      const extra = [t.owner, t.due].filter(Boolean).join(' · ');
+      return `${t.task || ''}${extra ? ` (${extra})` : ''}`;
+    });
+    exportSummaryBody.innerHTML = `
+      ${report.title ? `<p><strong>${escapeHtml(report.title)}</strong></p>` : ''}
+      <p>${escapeHtml(report.executive_summary || '')}</p>
+      ${list('Decisiones', report.decisions)}
+      ${list('Tareas', tasks)}
+      ${list('Próximos pasos', report.next_steps)}
+    `;
+  };
+
+  const setExportButtonsBusy = (busy, label) => {
+    [btnSaveFolder, btnDownloadZip].forEach(b => { if (b) b.disabled = busy; });
+    if (exportHint && label) exportHint.textContent = label;
+  };
+
+  function showExportModal(meeting, media, reportPromise) {
+    if (!exportModal) return;
+    const folder = ExportEngine.folderName();
+    const files = [];
+    if (media.video) files.push({ key: 'video', name: `Video.${media.video.ext}`, blob: media.video.blob, icon: 'fa-film' });
+    if (media.audio) files.push({ key: 'audio', name: `Audio.${media.audio.ext}`, blob: media.audio.blob, icon: 'fa-file-audio' });
+    files.push({ key: 'transcript', name: 'Transcripción.txt', blob: ExportEngine.buildTranscriptText(meeting, null), icon: 'fa-file-lines' });
+
+    exportState = { folder, files, meeting, urls: [], saved: false };
+    if (exportFolderName) exportFolderName.textContent = `Carpeta: ${folder}`;
+    if (btnSaveFolder) btnSaveFolder.classList.toggle('is-hidden', !ExportEngine.supportsFolderSave());
+    if (exportSummaryBody) exportSummaryBody.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generando resumen final con IA...';
+    renderExportFiles();
+    openModal(exportModal);
+
+    setExportButtonsBusy(true, 'Preparando la transcripción con el resumen de la IA...');
+    const state = exportState;
+    reportPromise.then(report => {
+      if (exportState !== state) return;
+      if (report) {
+        meeting.aiReport = report;
+        const t = state.files.find(f => f.key === 'transcript');
+        if (t) t.blob = ExportEngine.buildTranscriptText(meeting, report);
+        renderExportFiles();
+      }
+      renderReport(report);
+      setExportButtonsBusy(false, ExportEngine.supportsFolderSave()
+        ? 'Elige dónde guardar: se creará la carpeta con los archivos dentro.'
+        : 'Tu navegador no permite elegir carpeta: se descarga un .zip con la carpeta y los archivos dentro.');
+    });
+  }
+
+  if (btnSaveFolder) {
+    btnSaveFolder.addEventListener('click', async () => {
+      if (!exportState) return;
+      setExportButtonsBusy(true, 'Guardando archivos...');
+      try {
+        const where = await ExportEngine.saveToFolder(exportState.folder, exportState.files);
+        exportState.saved = true;
+        setExportButtonsBusy(false, `✔ Guardado en "${where}".`);
+      } catch (err) {
+        if (err && err.name === 'AbortError') {
+          setExportButtonsBusy(false, 'Guardado cancelado.');
+        } else {
+          console.warn('Folder save failed:', err);
+          setExportButtonsBusy(false, 'No se pudo guardar en esa carpeta. Prueba "Descargar carpeta (.zip)".');
+        }
+      }
+    });
+  }
+
+  if (btnDownloadZip) {
+    btnDownloadZip.addEventListener('click', async () => {
+      if (!exportState) return;
+      setExportButtonsBusy(true, 'Creando el .zip (puede tardar con grabaciones largas)...');
+      try {
+        const zip = await ExportEngine.buildZip(exportState.folder, exportState.files);
+        ExportEngine.download(zip, `${exportState.folder}.zip`);
+        exportState.saved = true;
+        setExportButtonsBusy(false, '✔ Descargado. Abre el .zip para ver la carpeta con los archivos.');
+      } catch (err) {
+        console.warn('ZIP failed:', err);
+        setExportButtonsBusy(false, err.message || 'No se pudo crear el .zip. Descarga los archivos uno a uno.');
+      }
+    });
+  }
+
+  const closeExport = () => {
+    if (!exportState) return closeModal(exportModal);
+    if (!exportState.saved && !confirm('¿Cerrar sin guardar? El video, el audio y la transcripción de esta reunión se perderán.')) return;
+    exportState.urls.forEach(u => URL.revokeObjectURL(u));
+    exportState = null;
+    closeModal(exportModal);
+  };
+  if (btnCloseExport) btnCloseExport.addEventListener('click', closeExport);
+
+  window.addEventListener('beforeunload', (e) => {
+    if (isActive || (exportState && !exportState.saved)) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
 
   btnCapture.addEventListener('click', startCapture);
   if (btnLobbyStart) btnLobbyStart.addEventListener('click', startCapture);
@@ -677,9 +1008,17 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
 
       <div class="pdf-title-banner" style="border-left: 5px solid #1d68f0;">
-        <h3>${meeting.topic || 'Coordinación General'}</h3>
+        <h3>${escapeHtml((meeting.aiReport && meeting.aiReport.title) || meeting.topic || 'Coordinación General')}</h3>
         <p><strong>Participantes:</strong> ${speakersList} &nbsp;|&nbsp; <strong>Tono:</strong> ${meeting.tone || 'Coordinación'} &nbsp;|&nbsp; <strong>Intensidad:</strong> ${meeting.intensity || 'Productiva'}</p>
       </div>
+
+      ${meeting.aiReport ? `
+      <div class="pdf-section-title"><i class="fa-solid fa-sparkles"></i> Resumen Ejecutivo (IA)</div>
+      <div style="font-size: 9pt; line-height: 1.55; color: #0f172a; margin-bottom: 14px;">
+        <p style="margin: 0 0 6px;">${escapeHtml(meeting.aiReport.executive_summary || '')}</p>
+        ${(meeting.aiReport.key_points || []).length ? `<p style="margin: 6px 0 2px;"><strong>Puntos principales:</strong></p><ul style="margin: 0; padding-left: 18px;">${meeting.aiReport.key_points.map(k => `<li>${escapeHtml(k)}</li>`).join('')}</ul>` : ''}
+        ${(meeting.aiReport.next_steps || []).length ? `<p style="margin: 6px 0 2px;"><strong>Próximos pasos:</strong></p><ul style="margin: 0; padding-left: 18px;">${meeting.aiReport.next_steps.map(k => `<li>${escapeHtml(k)}</li>`).join('')}</ul>` : ''}
+      </div>` : ''}
 
       <div class="pdf-kpi-grid">
         <div class="pdf-kpi-card">
@@ -740,8 +1079,8 @@ document.addEventListener('DOMContentLoaded', () => {
         ${(meeting.transcript || []).length > 0 ? (meeting.transcript || []).map(t => `
           <div class="pdf-transcript-line">
             <span class="time">[${t.timestamp || '00:00'}]</span>
-            <span class="speaker">${t.speaker}:</span>
-            <span class="text">${t.text}</span>
+            <span class="speaker">${escapeHtml(t.speaker)}:</span>
+            <span class="text">${escapeHtml(t.text)}${t.translation ? `<br><em style="color:#475569;">↳ ${escapeHtml(t.translation)}</em>` : ''}</span>
           </div>
         `).join('') : '<p style="font-size: 8.5pt; color: #64748b; font-style: italic; margin: 4px 0;">Sin intervenciones de audio registradas.</p>'}
       </div>
@@ -837,9 +1176,9 @@ document.addEventListener('DOMContentLoaded', () => {
               ${(m.transcript || []).length > 0 ? (m.transcript || []).map(t => `
                 <div class="drawer-line">
                   <span class="drawer-speaker ${t.speakerType === 'user' ? 'text-sage' : 'text-lavender'}">
-                    <strong>${t.speaker}:</strong>
+                    <strong>${escapeHtml(t.speaker)}:</strong>
                   </span>
-                  <span class="drawer-text">${t.text}</span>
+                  <span class="drawer-text">${escapeHtml(t.text)}${t.translation ? `<br><em class="text-muted">↳ ${escapeHtml(t.translation)}</em>` : ''}</span>
                 </div>
               `).join('') : '<p class="text-dim text-xs">Sin intervenciones de audio registradas.</p>'}
             </div>
@@ -963,6 +1302,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   initVoiceChat();
+  applyLangSettings();
 
   if (btnVoiceChat) {
     btnVoiceChat.addEventListener('click', () => {
@@ -1070,12 +1410,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const isUser = chunk.speakerType === 'user';
     const speakerClass = isUser ? 'speaker-user' : 'speaker-zoom';
 
+    const langTag = chunk.lang ? `<span class="lang-tag">${escapeHtml(chunk.lang)}</span>` : '';
+    const translation = chunk.translation
+      ? `<div class="translation"><i class="fa-solid fa-language"></i> ${escapeHtml(chunk.translation)}</div>`
+      : '';
     itemDiv.innerHTML = `
       <div class="speaker ${speakerClass}">
-        <span><i class="${isUser ? 'fa-solid fa-user' : 'fa-solid fa-desktop'}"></i> ${chunk.speaker}</span>
-        <span class="time">${chunk.timestamp}</span>
+        <span><i class="${isUser ? 'fa-solid fa-user' : 'fa-solid fa-desktop'}"></i> ${escapeHtml(chunk.speaker)}${langTag}</span>
+        <span class="time">${escapeHtml(chunk.timestamp)}</span>
       </div>
-      <div class="text">${chunk.text}</div>
+      <div class="text">${escapeHtml(chunk.text)}</div>
+      ${translation}
     `;
 
     transcriptStream.appendChild(itemDiv);

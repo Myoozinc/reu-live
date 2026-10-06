@@ -8,14 +8,21 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-// Admin credentials
+// Admin credentials: ONLY from environment variables (Vercel -> Settings -> Environment Variables).
+// Without them the admin panel stays locked: a default password in a public repo is no password.
 const ADMIN_CREDENTIALS = {
-  username: process.env.ADMIN_USERNAME || 'admin.one',
-  password: process.env.ADMIN_PASSWORD || 'Rona12345'
+  username: process.env.ADMIN_USERNAME || '',
+  password: process.env.ADMIN_PASSWORD || ''
 };
 
 // Secret for signing admin session tokens
-const ADMIN_SECRET = process.env.ADMIN_SECRET || 'reulive_zen_admin_secret_key_2026';
+const ADMIN_SECRET = process.env.ADMIN_SECRET || '';
+
+function safeEqual(a, b) {
+  const ba = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
+}
 
 // Storage file fallback path
 const DATA_FILE = process.env.VERCEL
@@ -548,8 +555,16 @@ class DatabaseEngine {
   /**
    * Validate Admin Login
    */
+  isAdminConfigured() {
+    return Boolean(ADMIN_CREDENTIALS.username && ADMIN_CREDENTIALS.password && ADMIN_SECRET);
+  }
+
   validateAdminCredentials(username, password) {
-    return username === ADMIN_CREDENTIALS.username && password === ADMIN_CREDENTIALS.password;
+    if (!this.isAdminConfigured()) return false;
+    // Evaluate both comparisons (no early exit) so timing doesn't reveal which one failed
+    const userOk = safeEqual(username, ADMIN_CREDENTIALS.username);
+    const passOk = safeEqual(password, ADMIN_CREDENTIALS.password);
+    return userOk && passOk;
   }
 
   /**
@@ -567,13 +582,13 @@ class DatabaseEngine {
    * Verify an admin token
    */
   verifyAdminToken(token) {
-    if (!token) return false;
+    if (!token || !this.isAdminConfigured()) return false;
     try {
       const raw = Buffer.from(token, 'base64').toString('utf8');
       const { payload, hmac } = JSON.parse(raw);
       const expectedHmac = crypto.createHmac('sha256', ADMIN_SECRET).update(payload).digest('hex');
 
-      if (hmac !== expectedHmac) return false;
+      if (!safeEqual(hmac, expectedHmac)) return false;
 
       const [username, expiresAtStr] = payload.split(':');
       if (username !== ADMIN_CREDENTIALS.username) return false;
